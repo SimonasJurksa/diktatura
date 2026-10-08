@@ -36,7 +36,7 @@ Visi keliai apibrėžti **vienoje vietoje**: `diktatura/paths.py` (Python, tik s
 | Žymės (⭐/☐), statistikos nunulinimas | `~/.local/share/diktatura/{annotations,stats_reset}.json` | ↑ |
 | Modeliai | `~/.local/share/diktatura/models/{azuolas-ct2,diarization,hf}` | ↑ |
 | Logai | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log` | `DIKTATURA_STATE` |
-| Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,rec-toggle.pid,asr.sock}` | `DIKTATURA_RUN` |
+| Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,rec-toggle.pid,asr.sock,pause}` | `DIKTATURA_RUN` |
 
 Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duomenys nepaliečiami.
 
@@ -59,6 +59,11 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   `VOX_OPEN_MARGIN` (START) / `VOX_CLOSE_MARGIN` (SUSTAIN). 2 s kalibracija prieš leidžiant įrašyti. Pre-roll 0.8 s.
   1 MB pipe buferis + `thread_queue_size` (apsauga nuo capture-badavimo). `VOX_MIN_SEC` tikrina **garso** trukmę
   (nuo atsidarymo iki paskutinio garsaus gabalo), ne failo — kitaip kosulys + tylos uodega praeitų.
+  **Pauzė perklausai** (`diktatura.pause`, `<runtime>/pause` su galiojimo laiku): kol Diktatūra pati groja garsą
+  (Apmokymų ▶, Teksto „▶ Groti nuo čia"), VOX kas 0.5 s tai mato — naujo įrašo nepradeda, atidarytą uždaro, triukšmo
+  lygio iš grojamo garso nesimoko (kitaip perklausa per kolonėles taptų nauju „pokalbiu" ir nežinomu balsu). UI
+  pratęsia pauzę kas ~1 s; sustojus — 1.5 s uodega; nulūžus UI — pauzė pasibaigia pati po ~3 s. Slack režimas
+  nepaliečiamas (įrašo tik skambučius; pristabdžius dingtų skambučio garsas).
   SIGTERM/SIGINT → švarus uždarymas (wav antraštė, būsenos failas), transkripcija tada nepaleidžiama (systemd ją
   nužudytų kartu su servisu — įrašą paims naktinis). Išėjimo kodai: 0 sustabdyta; 3 capture netikėtai baigėsi
   (systemd `Restart=on-failure` perkrauna). Testams: `DIKTATURA_MIC`/`DIKTATURA_MONITOR` (virtualūs įrenginiai),

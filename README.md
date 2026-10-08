@@ -23,7 +23,8 @@ eilutės:
 ![Diktatūros teksto langas](docs/img/text.png)
 
 **🎓 Apmokymai** — kai kalba nepažįstamas balsas, jis tekste pažymimas „Kolega?nezN". Čia jo paklausai, matai, ką
-sakė, ir įrašai vardą — nuo tada atpažįstamas automatiškai, o seni tekstai pasitaiso patys:
+sakė, ir įrašai vardą — nuo tada atpažįstamas automatiškai, o seni tekstai pasitaiso patys (kol groja perklausa,
+Diktatūra jos neįrašinėja):
 
 ![Apmokymai](docs/img/training.png)
 

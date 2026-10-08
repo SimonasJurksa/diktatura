@@ -6,7 +6,8 @@
   (pvz. Apmokymuose „Kolega?nez3" -> „Jonas") -> perpiešiama.
 - Skyrikliai „// ── data · VOX/SLACK/REC · failas ──", kalbėtojai spalvomis, paieška (nuo 3 simb.; ◀ ▶, Enter /
   Shift+Enter, Ctrl+F; „Regex"), filtras pagal kalbėtoją, „Tik žymėtos", „Kopijuoti viską", „Sekti naujus".
-- Dešinys klik ant eilutės: ▶ Groti nuo čia (įrašas groja nuo tos vietos, einama eilutė paryškinama),
+- Dešinys klik ant eilutės: ▶ Groti nuo čia (įrašas groja nuo tos vietos, einama eilutė paryškinama; kol groja,
+  VOX neįrašinėja — diktatura.pause),
   ⭐ svarbu / ☐ užduotis (☑ atlikta), 🎓 priskirti vardą nežinomam balsui. 📊 Statistika (kas kiek kalbėjo),
   💾 Eksportuoti (matomas tekstas -> .txt / .md). Tekstą galima redaguoti prieš kopijuojant (failai nekeičiami).
 """
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from diktatura import annotations, config, paths, sessions, stats
+from diktatura import annotations, config, pause, paths, sessions, stats
 from diktatura.speakers import store
 from diktatura.ui.gtk import Gdk, GLib, Gtk, Pango, button, label
 from diktatura.ui.player import SeekPlayer
@@ -567,6 +568,7 @@ class TextPage(Gtk.Box):
             self.status.set_text(f"✗ nepavyko groti: {e}")
             return False
         self.play_session = ln.session
+        pause.hold(force=True)                    # VOX neįrašinės grojamo įrašo
         self.btn_stop.show()
         self._highlight_playing()
         GLib.timeout_add(250, self._play_tick)
@@ -596,10 +598,13 @@ class TextPage(Gtk.Box):
         if not self.player.playing():
             self.stop_playback()
             return False
+        pause.hold()                              # grojama — pratęsti įrašymo pauzę
         self._highlight_playing()
         return True
 
     def stop_playback(self) -> None:
+        if self.play_session is not None:
+            pause.release()
         self.player.stop()
         self.play_session = None
         s, e = self.buf.get_bounds()

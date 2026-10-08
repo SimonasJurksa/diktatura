@@ -9,6 +9,8 @@ Architektūra: `VoxGate` — gryna logika (lygis dBFS per 100 ms gabalą -> spre
 Paleidimas: python -m diktatura.audio.vox   (systemd: diktatura-vox.service)
 Env (nebūtini): DIKTATURA_MIC, DIKTATURA_MONITOR — kiti garso įrenginiai (E2E testams);
   DIKTATURA_CAPTURE_CMD — komanda, kurios stdout = s16le stereo 16 kHz PCM, vietoj ffmpeg/pulse (testams).
+Pauzė: kol Diktatūra pati groja garsą (Apmokymų perklausa, „▶ Groti nuo čia"), naujas įrašas nepradedamas, o
+atidarytas uždaromas (diktatura.pause, <runtime>/pause) — kitaip perklausa būtų įrašyta kaip naujas pokalbis.
 Išėjimo kodai: 0 — sustabdyta (SIGTERM/SIGINT); 3 — garso capture netikėtai baigėsi (systemd perkrauna).
 """
 import datetime as dt
@@ -23,7 +25,7 @@ from collections import deque
 
 import numpy as np
 
-from diktatura import config, debug, paths
+from diktatura import config, debug, pause, paths
 
 SR = 16000
 CHUNK = SR // 10          # 100 ms
@@ -31,6 +33,7 @@ CALIB = 20                # gabalų (2 s) kambario triukšmui išmokti prieš le
 PREROLL = 8               # 0.8 s prieš atsidarymą (kad nenukąstų pirmo žodžio)
 NF_WINDOW = 50            # ~5 s triukšmo grindų langas (mokomasi tik budint)
 CONFIG_EVERY = 50         # nustatymai perskaitomi kas ~5 s (keitimai be restarto)
+PAUSE_EVERY = 5           # pauzė (Diktatūra pati groja garsą) tikrinama kas 0.5 s
 
 
 def rms_db(x: np.ndarray) -> float:
@@ -101,6 +104,12 @@ class VoxGate:
             self.idle_run = 0                      # main() išvalo pre-roll po uždarymo
             return "close"
         return "write"
+
+    def pause_reset(self) -> None:
+        """Pauzė (Diktatūra groja garsą): įrašas nebetęsiamas, skaitikliai nuo nulio. Triukšmo grindys lieka
+        tos pačios — grojamas garsas jų nemoko (pauzės metu step() nekviečiamas)."""
+        self.recording = False
+        self.sil = self.idle_run = self.since_open = 0
 
     def long_enough(self) -> bool:
         return self.voiced >= self.min_chunks
@@ -182,6 +191,7 @@ def main() -> int:
     wav = cur = None
     n = 0
     stopping = False
+    paused = False
     try:
         while True:
             buf = ff.stdout.read(nbytes)
@@ -196,6 +206,21 @@ def main() -> int:
                         f"{k}={new_cfg[k]}" for k in new_cfg if new_cfg[k] != cfg_now.get(k)))
                     cfg_now = new_cfg
                 gate.update_config(new_cfg)
+            if n % PAUSE_EVERY == 0 and pause.active() != paused:
+                paused = not paused
+                if paused:
+                    log("⏸ įrašymas pristabdytas — Diktatūra pati groja garsą (perklausa)")
+                    if wav is not None:          # įrašas iki perklausos išsaugomas kaip įprastai
+                        wav.close()
+                        paths.STATE_RECORDING.unlink(missing_ok=True)
+                        finish(cur, gate)
+                        wav = cur = None
+                else:
+                    log("▶ įrašymas vėl veikia (perklausa baigta)")
+                gate.pause_reset()
+                preroll.clear()
+            if paused:
+                continue                         # grojamas garsas: nerašom, triukšmo lygio nesimokom
             a = np.frombuffer(buf, dtype=np.int16).reshape(-1, 2)
             lv_l, lv_r = rms_db(a[:, 0]), rms_db(a[:, 1])
             decision = gate.step(max(lv_l, lv_r))

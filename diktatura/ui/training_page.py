@@ -6,14 +6,15 @@ Kai pokalbyje kalba neatpažintas balsas, transkripcija jį pažymi „Kolega?ne
 transkripcijose „Kolega?nezN" -> vardas, pereinama prie kito. „Ne žmogus / triukšmas" -> pavyzdys ištrinamas ir
 panašus garsas nebesiūlomas. Apačioje — registruoti balsai: pervadinti / sujungti (pvz. „Ruta" -> „Rūta") / pamiršti.
 
-Duomenų logika — diktatura.speakers.store (tik stdlib). Grojimas — `paplay` (testams DIKTATURA_PLAYER).
+Duomenų logika — diktatura.speakers.store (tik stdlib). Grojimas — `paplay` (testams DIKTATURA_PLAYER); kol groja,
+VOX neįrašinėja (diktatura.pause), kad perklausa nevirstų nauju „pokalbiu".
 """
 import os
 import shlex
 import subprocess
 from datetime import datetime
 
-from diktatura import sessions
+from diktatura import pause, sessions
 from diktatura.speakers import store
 from diktatura.ui.gtk import GLib, Gtk, button, label
 
@@ -309,10 +310,12 @@ class TrainingPage(Gtk.Box):
             except OSError as e:
                 self.set_msg(f"✗ nepavyko groti: {e}", "dk-error")
                 return
+            pause.hold(force=True)                # VOX neįrašinės perklausos (garsas eina per kolonėles)
             self.btn_play.set_sensitive(False)
             self.btn_stop.set_sensitive(True)
 
     def stop(self) -> None:
+        was = self.player is not None
         if self.player and self.player.poll() is None:
             self.player.terminate()
             try:
@@ -320,12 +323,16 @@ class TrainingPage(Gtk.Box):
             except subprocess.TimeoutExpired:
                 self.player.kill()
         self.player = None
+        if was:
+            pause.release()                       # dar trumpa uodega — kol nutils kolonėlės ir buferiai
         self.btn_stop.set_sensitive(False)
         self.btn_play.set_sensitive(bool(self.cur and self.cur.wav.exists()))
 
     def _poll_player(self):
         if self.player and self.player.poll() is not None:
             self.stop()
+        elif self.player:
+            pause.hold()                          # grojama — pratęsti pauzę
         return True
 
     def rename(self, old: str, new: str) -> int:

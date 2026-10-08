@@ -52,6 +52,12 @@ class MainWindow(Gtk.ApplicationWindow):
         self.current = "text"
         self.stack.connect("notify::visible-child-name", self._on_page)
         self.connect("key-press-event", self._on_key)
+        self.connect("destroy", lambda _w: self.stop_audio())
+
+    def stop_audio(self) -> None:
+        """Uždarant langą — sustabdyti grojimą (kitaip garsas skambėtų toliau, o įrašymo pauzė baigtųsi)."""
+        self.text.stop_playback()
+        self.training.stop()
 
     def show_page(self, name: str) -> None:
         if name in self.pages:

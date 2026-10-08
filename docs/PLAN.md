@@ -169,6 +169,9 @@ Kas padaryta:
 - Pulsavimas: kol `pending/` ne tuščias — ikona kaitalioja pilną/blankią tos pačios spalvos versiją (~1 s ciklas;
   `icons/*-dim.png`, `tools/make_dim_icons.py`); baigus — sustoja. Meniu „🎓 Apmokymai paruošti (N)".
 - Duomenų sluoksnis — `diktatura/speakers/store.py` (Q0), UI dirba sistemos python3 be numpy.
+- **Pauzė perklausai** (2026-10-09, savininko prašymu): kol groja perklausa (Apmokymuose ar Teksto „▶ Groti nuo čia"),
+  VOX neįrašinėja (`diktatura/pause.py`) — kitaip perklausa per kolonėles būtų įrašyta kaip naujas pokalbis, o tas
+  pats balsas vėl atsidurtų tarp nežinomų. Testai: `tests/test_pause.py`, UI testai.
 - Testai: `tests/ui/test_training.py` (I5, G4/G5 per UI, grojimas su netikru grotuvu), `tests/test_speakers.py`.
 
 ## Etapas 2 — VAD pre-filtras ✅ (2026-10-08)

@@ -137,3 +137,16 @@ def test_rename_merge_and_forget_known_voice(win, demo):
     assert "Rūta: iki" in win.text.text()
     tp.forget("Ona")
     assert "Ona" not in store.counts() and "Registruoti balsai (1)" in tp.exp.get_label()
+
+
+def test_playback_pauses_recording_and_releases(win):
+    from diktatura import pause
+    tp = win.training
+    assert not pause.active()
+    tp.play()
+    assert pause.active() and pause.info()["reason"] == "grojama perklausa"
+    tp.stop()
+    info = pause.info()
+    assert info and info["reason"] == "baigta groti" and info["until"] - time.time() <= pause.TAIL_SEC + 0.1
+    tp.move(1)                                   # stop() be grojimo — pauzės nekeičia
+    assert pause.info()["reason"] == "baigta groti"

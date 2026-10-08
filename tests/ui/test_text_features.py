@@ -242,3 +242,13 @@ def test_stats_dialog_buttons(win, monkeypatch):
     win.text.on_stats()
     assert seen == [False, True, False]                                  # prieš / po nunulinimo / po „viską"
     assert st_mod.reset_time() is None
+
+
+def test_play_from_line_pauses_recording_and_close_stops(win):
+    from diktatura import pause
+    tp = win.text
+    ln = next(ln for ln in tp.visible_lines() if ln.ts == "0:00:05")
+    assert tp.play_line(ln) and pause.active()
+    proc = tp.player.proc
+    win.stop_audio()                             # tas pats, kas uždarant langą
+    assert proc.poll() is not None and pause.info()["reason"] == "baigta groti"
