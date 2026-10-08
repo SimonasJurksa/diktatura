@@ -193,3 +193,52 @@ def test_annotations_store_pure(env):
     assert annotations.toggle_done("f.named.txt", 3, "tekstas") is True
     with pytest.raises(ValueError):
         annotations.set_tag("f.named.txt", 1, "x", "kita")
+
+
+def test_stats_reset_counts_only_new_lines_and_can_be_undone(win, demo):
+    from diktatura import stats as st_mod
+    tp = win.text
+    assert set(tp.stats()) == {"Ona", "Tu", "Kolega?nez1"} and "nuo pradžių" in tp.stats_note()
+    tp.reset_stats()                                                     # mygtukas: nuo dabar
+    assert st_mod.reset_time() is not None and "nunulinta" in tp.stats_note()
+    # demo sesijos — „šiandien 10:00", todėl nunulinimo laiką imam vėlesnį (testas nepriklauso nuo paros laiko)
+    from datetime import time as dtime
+    st_mod.reset(datetime.combine(date.today(), dtime(23, 0)))
+    assert tp.stats() == {} and tp.stats_rows() == []
+    assert "rytoj diegimas" in tp.text()                                 # tekstai nepaliesti
+    later = datetime.combine(date.today(), dtime(23, 30))               # nauja sesija po nunulinimo
+    (demo.recordings / f"vox_{later:%Y%m%d_%H%M%S}.named.txt").write_text(
+        "[0:00:01] Ona: nauja kalba po nunulinimo\n", encoding="utf-8")
+    tp.refresh()
+    rows = tp.stats_rows()
+    assert [r[0] for r in rows] == ["Ona"] and rows[0][1] == 1 and rows[0][4] == "100 %"
+    assert st_mod.reset_time() is not None                               # išlieka (failas), ne tik atmintyje
+    tp.clear_stats_reset()
+    assert st_mod.reset_time() is None and tp.stats()["Ona"]["lines"] == 3
+
+
+def test_stats_reset_uses_line_time_not_session_start(env):
+    from diktatura import stats as st_mod
+    start = datetime(2026, 10, 9, 10, 0, 0)
+    since = st_mod.reset(datetime(2026, 10, 9, 10, 5, 0))                # nunulinta sesijos viduryje
+    assert not st_mod.counts(start, 299, since) and st_mod.counts(start, 300, since)
+    assert st_mod.counts(start, None, None)
+    st_mod.clear()
+    assert st_mod.reset_time() is None
+
+
+def test_stats_dialog_buttons(win, monkeypatch):
+    """Dialogas: ↺ Nunulinti -> Skaičiuoti viską -> Uždaryti (paspaudimai imituojami, langas nerodomas tau)."""
+    from diktatura import stats as st_mod
+    from diktatura.ui.gtk import Gtk
+    seen = []
+    answers = iter([1, 2, Gtk.ResponseType.CLOSE])
+
+    def fake_run(dlg):
+        seen.append(st_mod.reset_time() is not None)
+        return next(answers)
+
+    monkeypatch.setattr(Gtk.Dialog, "run", fake_run)
+    win.text.on_stats()
+    assert seen == [False, True, False]                                  # prieš / po nunulinimo / po „viską"
+    assert st_mod.reset_time() is None

@@ -33,7 +33,7 @@ Visi keliai apibrėžti **vienoje vietoje**: `diktatura/paths.py` (Python, tik s
 | Nustatymai | `~/.config/diktatura/diktatura.conf` (numatytieji: `config/diktatura.conf.default`) | `DIKTATURA_CONFIG_DIR` |
 | Įrašai, tekstai | `~/.local/share/diktatura/recordings/` | `DIKTATURA_DATA` (visai duomenų šakniai) |
 | Balsai | `~/.local/share/diktatura/speakers/{enroll.json,pending/,ignored.json,assigned.json}` | ↑ |
-| Žymės (⭐/☐) | `~/.local/share/diktatura/annotations.json` | ↑ |
+| Žymės (⭐/☐), statistikos nunulinimas | `~/.local/share/diktatura/{annotations,stats_reset}.json` | ↑ |
 | Modeliai | `~/.local/share/diktatura/models/{azuolas-ct2,diarization,hf}` | ↑ |
 | Logai | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log` | `DIKTATURA_STATE` |
 | Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,rec-toggle.pid,asr.sock}` | `DIKTATURA_RUN` |
@@ -111,7 +111,8 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
     tik žymėtos). Eilutės pradžioje `TextMark` → `line_at_iter()` (išlieka redaguojant) — ant jo remiasi dešinio klik
     meniu: ▶ groti nuo eilutės (`ui.player.SeekPlayer` — ffplay; grojama eilutė paryškinama), ⭐/☐/☑ žymės
     (`diktatura.annotations`, `<duomenys>/annotations.json`), 🎓 priskirti vardą `Kolega?nezN`. 📊 statistika
-    (`sessions.speaker_stats`), 💾 eksportas (.txt/.md).
+    (`sessions.speaker_stats`; „↺ Nunulinti" — `diktatura.stats`: skaičiuoja tik eilutes po įsiminto laiko, nieko
+    netrina), 💾 eksportas (.txt/.md).
   - `ui.training_page` (🎓 Apmokymai): pending sąrašas + kontekstas (`store.occurrences_many`), ▶ grojimas
     (`paplay`; testams `DIKTATURA_PLAYER`), vardas su autocomplete → `store.assign`; „Ne žmogus" → `store.discard`;
     registruoti balsai: pervadinti/sujungti/pamiršti. Po pakeitimų perpiešia Teksto skiltį.

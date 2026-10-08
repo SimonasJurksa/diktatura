@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from diktatura import annotations, config, paths, sessions
+from diktatura import annotations, config, paths, sessions, stats
 from diktatura.speakers import store
 from diktatura.ui.gtk import Gdk, GLib, Gtk, Pango, button, label
 from diktatura.ui.player import SeekPlayer
@@ -608,27 +608,66 @@ class TextPage(Gtk.Box):
 
     # ── statistika / eksportas ──
     def stats(self) -> dict:
-        rows = [(id(ln.session), ln.seconds, ln.speaker, ln.text) for ln in self.visible_lines()]
+        """Kas kiek kalbėjo matomose eilutėse, pasakytose po nunulinimo (jei nunulinta)."""
+        since = stats.reset_time()
+        rows = [(id(ln.session), ln.seconds, ln.speaker, ln.text) for ln in self.visible_lines()
+                if stats.counts(ln.session.when, ln.seconds, since)]
         return sessions.speaker_stats(rows)
 
-    def on_stats(self) -> None:
+    def stats_rows(self) -> list:
+        """Statistikos lentelės eilutės: (kalbėtojas, eilučių, žodžių, ≈ laikas, dalis), daugiausiai kalbėjęs pirmas."""
         st = self.stats()
         total = sum(v["seconds"] for v in st.values()) or 1
+        return [(name, v["lines"], v["words"], fmt_dur(v["seconds"]), f"{100 * v['seconds'] / total:.0f} %")
+                for name, v in sorted(st.items(), key=lambda kv: -kv[1]["seconds"])]
+
+    def stats_note(self) -> str:
+        since = stats.reset_time()
+        frm = f"nuo {since:%Y-%m-%d %H:%M} (nunulinta)" if since else "nuo pradžių (matomose sesijose)"
+        return f"Skaičiuojama {frm}. Matomos sesijos: {len(self.order)}. Laikas — apytikslis (pagal eilučių laikus)."
+
+    def reset_stats(self) -> None:
+        stats.reset()
+
+    def clear_stats_reset(self) -> None:
+        stats.clear()
+
+    def on_stats(self) -> None:
+        RESET, ALL = 1, 2
         dlg = Gtk.Dialog(title="📊 Kas kiek kalbėjo", transient_for=self.get_toplevel() if self.win else None, modal=True)
+        b_reset = dlg.add_button("↺ Nunulinti", RESET)
+        b_reset.set_tooltip_text("Skaičiuoti tik nuo dabar. Tekstai nekeičiami ir netrinami.")
+        b_all = dlg.add_button("Skaičiuoti viską", ALL)
+        b_all.set_tooltip_text("Pamiršti nunulinimą — vėl skaičiuoti visas matomas eilutes")
         dlg.add_button("Uždaryti", Gtk.ResponseType.CLOSE)
-        store_ = Gtk.ListStore(str, int, int, str, str)
-        for name, v in sorted(st.items(), key=lambda kv: -kv[1]["seconds"]):
-            store_.append([name, v["lines"], v["words"], fmt_dur(v["seconds"]), f"{100 * v['seconds'] / total:.0f} %"])
-        tv = Gtk.TreeView(model=store_)
+        model = Gtk.ListStore(str, int, int, str, str)
+        tv = Gtk.TreeView(model=model)
         for i, title in enumerate(("Kalbėtojas", "Eilučių", "Žodžių", "≈ Laikas", "Dalis")):
             tv.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(), text=i))
+        note = label("", css="dk-help", wrap=True)
         box = dlg.get_content_area()
         box.set_spacing(8)
-        box.pack_start(label(f"Matomos sesijos: {len(self.order)}. Laikas — apytikslis (pagal eilučių laikus).",
-                             css="dk-help", wrap=True), False, False, 0)
+        box.pack_start(note, False, False, 0)
         box.pack_start(tv, True, True, 0)
+
+        def fill():
+            model.clear()
+            for r in self.stats_rows():
+                model.append(list(r))
+            note.set_text(self.stats_note())
+            b_all.set_sensitive(stats.reset_time() is not None)
+
+        fill()
         dlg.show_all()
-        dlg.run()
+        while True:
+            resp = dlg.run()
+            if resp == RESET:
+                self.reset_stats()
+            elif resp == ALL:
+                self.clear_stats_reset()
+            else:
+                break
+            fill()
         dlg.destroy()
 
     def export_text(self, fmt: str = "txt") -> str:

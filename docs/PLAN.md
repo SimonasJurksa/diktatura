@@ -238,9 +238,11 @@ Kas padaryta:
   `<duomenys>/annotations.json`; žymė išlieka pervadinus kalbėtoją).
 - **Eksportas:** „💾 Eksportuoti…" — matomas (filtruotas) tekstas į `.txt` arba `.md` (su žymėmis).
 - **Statistika:** „📊 Statistika" — kas kiek kalbėjo matomose sesijose (eilutės, žodžiai, ≈ laikas, dalis %).
+  „↺ Nunulinti" (2026-10-09, savininko prašymu) — skaičiuoti tik nuo dabar (tekstai netrinami; laikas
+  `<duomenys>/stats_reset.json`, `diktatura/stats.py`), „Skaičiuoti viską" — atšaukia.
 - **Regex paieška:** „Regex" varnelė (be didžiųjų/mažųjų skirtumo; klaidinga išraiška — pranešimas, ne lūžis).
 - **Nežinomo balso vardas iš teksto:** dešinys klik ant `Kolega?nezN` → „🎓 Priskirti vardą…" → Apmokymai su tuo balsu.
-- Testai: `tests/ui/test_text_features.py` (13).
+- Testai: `tests/ui/test_text_features.py` (16).
 
 ---
 

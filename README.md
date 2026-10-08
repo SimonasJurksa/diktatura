@@ -51,7 +51,7 @@ nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik
 - 🔇 **Kalbos filtras** — įrašai be kalbos (kosulys, triukšmas, muzika) atmetami dar prieš kraunant modelį.
 - 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi; paieška (ir regex), filtrai pagal
   kalbėtoją ir laikotarpį (iki viso archyvo), ⭐ žymės ir ☐ užduotys, **▶ grojimas nuo eilutės**,
-  📊 statistika (kas kiek kalbėjo), 💾 eksportas į .txt / .md.
+  📊 statistika (kas kiek kalbėjo; galima nunulinti), 💾 eksportas į .txt / .md.
 - 🌙 **Lankstus režimas** — iškart po skambučio arba naktinis paketinis transkribavimas (01:30);
   pasirinktinai — nuolat įkrautas modelis greitesniam tekstui po diktavimo.
 - 💾 Po transkripcijos garsas suspaudžiamas į mp3 (vietos taupymui); tušti — ištrinami.
