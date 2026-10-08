@@ -1,0 +1,14 @@
+[Unit]
+Description=Diktatūra status bar ikona (pilka/raudona/geltona)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# Sistemos python3 (turi gi/GTK). DISPLAY paprastai jau importuotas į --user aplinką.
+ExecStart=/usr/bin/python3 %h/wispr/scripts/tray.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

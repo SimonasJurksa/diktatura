@@ -1,0 +1,9 @@
+[Unit]
+Description=Diktatūra naktinė transkripcija (visi dienos įrašai be teksto)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash %h/wispr/scripts/transcribe-pending.sh
+# Žema pirmenybė, kad net jei vartotojas dar dirba — netrukdytų
+Nice=10
+IOSchedulingClass=idle

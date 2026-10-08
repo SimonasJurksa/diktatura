@@ -1,0 +1,12 @@
+[Unit]
+Description=Diktatūra VOX — balso aktyvumo įrašymas (diktavimui, be Slack)
+After=pulseaudio.service pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env %h/wispr/plans/A/.venv/bin/python %h/wispr/scripts/vox-record.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

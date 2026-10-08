@@ -1,0 +1,33 @@
+# ── Diktatūra .gitignore ──
+# Taisyklė: į PUBLIC repo eina TIK kodas, skriptai, config šablonas, README, ikonos.
+# Jokių asmeninių duomenų, balsų, įrašų, modelių.
+
+# Asmeniniai / jautrūs duomenys — NIEKADA
+recordings/              # pokalbių garsas + transkripcijos (asmeniška)
+speakers/                # enroll.json = balso biometrija + pending pavyzdžiai
+speakers_samples/        # balso pavyzdžiai
+models/                  # dideli modeliai + HF cache (licencijos)
+
+# Asmeniniai darbo dokumentai (lieka lokaliai, ne į public)
+STATUS.md                # dev žurnalas su vardais/transkriptais
+CLAUDE.md                # Claude Code darbo kontekstas + savininko info
+
+# Aplinkos / laikini
+**/.venv/
+__pycache__/
+*.pyc
+.cache/
+*.skip
+
+# Garso/binariniai failai (bet kur)
+*.wav
+*.mp3
+*.m4a
+*.ggml
+*.bin
+*.onnx
+
+# Būsenos/užraktų failai
+.recording
+.transcribe.lock
+.rec.pid
