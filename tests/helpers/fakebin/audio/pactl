@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Testų pactl: Slack skambučio srautą imituoja failas $FAKE_PACTL_STATE (jo turinys = „application.name").
+case "$1 ${2:-}" in
+  "list source-outputs")
+    if [ -s "${FAKE_PACTL_STATE:-/nonexistent}" ]; then
+      printf 'Source Output #42\n\tDriver: protocol-native.c\n\tProperties:\n\t\tapplication.name = "%s"\n' \
+        "$(cat "$FAKE_PACTL_STATE")"
+    fi ;;
+  "get-default-source ") echo "fake_source" ;;
+  "get-default-sink ") echo "fake_sink" ;;
+  *) echo "fake pactl: nepalaikoma: $*" >&2; exit 1 ;;
+esac

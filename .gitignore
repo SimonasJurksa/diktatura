@@ -1,33 +1,71 @@
 # ── Diktatūra .gitignore ──
+# SVARBU: git'e komentaras galioja TIK eilutės pradžioje. Niekada nerašyti "šablonas  # komentaras".
 # Taisyklė: į PUBLIC repo eina TIK kodas, skriptai, config šablonas, README, ikonos.
-# Jokių asmeninių duomenų, balsų, įrašų, modelių.
 
 # Asmeniniai / jautrūs duomenys — NIEKADA
-recordings/              # pokalbių garsas + transkripcijos (asmeniška)
-speakers/                # enroll.json = balso biometrija + pending pavyzdžiai
-speakers_samples/        # balso pavyzdžiai
-models/                  # dideli modeliai + HF cache (licencijos)
+# pokalbių garsas + transkripcijos
+recordings/
+# balso biometrija (enroll.json) + nežinomų balsų pavyzdžiai
+speakers/
+speakers_samples/
+# ...bet NE kodo paketas diktatura/speakers/ (jame esami *.json/*.wav vis tiek ignoruojami žemiau)
+!/diktatura/speakers/
+# dideli modeliai + HF cache
+models/
+# logai (gali turėti failų vardus, teksto ištraukas)
+logs/
+*.log
 
-# Asmeniniai darbo dokumentai (lieka lokaliai, ne į public)
-STATUS.md                # dev žurnalas su vardais/transkriptais
-CLAUDE.md                # Claude Code darbo kontekstas + savininko info
+# Asmeniniai darbo dokumentai (lieka lokaliai)
+/STATUS.md
+/CLAUDE.md
+# lokalus privačių terminų sąrašas privatumo sargui (.githooks)
+.private-terms
+# lokalus vartotojo config (versijuojamas tik *.default)
+config/diktatura.conf
+# privatūs testų fixture'ai (tavo balsas ir pan.)
+tests/fixtures/private/
+# atsisiųsti viešieji LT klipai (make fixtures) — ne repo
+tests/fixtures/cv/
+
+# Diarizacijos / embeddingų išvestys (realių balsų vektoriai)
+*.diar.json
+*.clusters.json
+*.reclust.json
+enroll.json
+ignored.json
+assigned.json
+# žymės (⭐/✅) su teksto ištraukomis
+annotations.json
 
 # Aplinkos / laikini
 **/.venv/
+.venv/
 __pycache__/
 *.pyc
 .cache/
+.pytest_cache/
 *.skip
 
-# Garso/binariniai failai (bet kur)
+# Garso / binariniai failai (bet kur)
 *.wav
 *.mp3
 *.m4a
+*.flac
+*.ogg
+*.opus
+*.webm
 *.ggml
 *.bin
 *.onnx
+*.pt
+*.safetensors
 
-# Būsenos/užraktų failai
+# Transkripcijos (bet kur)
+*.named.txt
+*.dialog.txt
+
+# Būsenos / užraktų failai
 .recording
 .transcribe.lock
 .rec.pid

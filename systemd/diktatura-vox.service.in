@@ -1,0 +1,18 @@
+[Unit]
+Description=Diktatūra — VOX balso aktyvumo įrašymas (diktavimui, be Slack)
+After=pulseaudio.service pipewire.service
+# Vienu metu veikia tik vienas įrašymo režimas (make mode-slack / make mode-vox)
+Conflicts=diktatura-autorecord.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=PYTHONPATH=@REPO@
+ExecStart=@REPO@/.venv/bin/python -m diktatura.audio.vox
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+
+# Šablonas: @REPO@ pakeičia `make install-units` (diegiama į ~/.config/systemd/user/).

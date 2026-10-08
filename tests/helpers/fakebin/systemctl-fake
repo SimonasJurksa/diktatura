@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Testų systemctl (DIKTATURA_SYSTEMCTL): būsena — failai $FAKE_SYSTEMD/<unit>.{active,enabled}; kvietimai -> calls.
+[ "$1" = "--user" ] && shift
+d="${FAKE_SYSTEMD:?}"; mkdir -p "$d"; echo "$*" >> "$d/calls"
+cmd="$1"; shift
+now=0; [ "${1:-}" = "--now" ] && { now=1; shift; }
+case "$cmd" in
+  is-active)  [ -f "$d/$1.active" ] && { echo active; exit 0; } || { echo inactive; exit 3; } ;;
+  is-enabled) [ -f "$d/$1.enabled" ] && { echo enabled; exit 0; } || { echo disabled; exit 1; } ;;
+  enable)  for u in "$@"; do [ -f "$d/$u.broken" ] && { echo "Unit $u not found." >&2; exit 1; }
+                             touch "$d/$u.enabled"; [ $now = 1 ] && touch "$d/$u.active"; done ;;
+  disable) for u in "$@"; do rm -f "$d/$u.enabled"; [ $now = 1 ] && rm -f "$d/$u.active"; done ;;
+  start)   for u in "$@"; do touch "$d/$u.active"; done ;;
+  stop)    for u in "$@"; do rm -f "$d/$u.active"; done ;;
+  *) ;;
+esac
+exit 0

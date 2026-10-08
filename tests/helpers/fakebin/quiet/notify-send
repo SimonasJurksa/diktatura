@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Testų notify-send: pranešimai NErodomi darbalaukyje, tik įrašomi (jei nurodytas FAKE_NOTIFY_LOG).
+[ -n "${FAKE_NOTIFY_LOG:-}" ] && printf '%s\n' "$*" >> "$FAKE_NOTIFY_LOG"
+exit 0

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Testų grotuvas (DIKTATURA_PLAYER): užrašo, ką „groja", ir laukia (kaip paplay) — garsas negroja.
+echo "$*" >> "${FAKE_PLAYER_LOG:?}"
+exec sleep "${FAKE_PLAYER_SEC:-30}"

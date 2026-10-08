@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Diktatūra privatumo sargas — tikrina KIEKVIENĄ stumiamą commit'ą (net jei commit'inta su --no-verify).
+# stdin eilutės: <local ref> <local sha> <remote ref> <remote sha>
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+Z=0000000000000000000000000000000000000000
+rc=0
+while read -r lref lsha rref rsha; do
+  [ -z "${lsha:-}" ] && continue
+  [ "$lsha" = "$Z" ] && continue                                   # šakos trynimas
+  if [ "$rsha" = "$Z" ] || ! git cat-file -e "$rsha" 2>/dev/null; then
+    commits="$(git rev-list "$lsha" --not --remotes)"              # nauja šaka / perrašyta istorija
+  else
+    commits="$(git rev-list "$rsha..$lsha")"
+  fi
+  for c in $commits; do "$HOOK_DIR/privacy-scan.sh" commit "$c" || rc=1; done
+done
+[ $rc -ne 0 ] && echo "⛔ push sustabdytas privatumo sargo (žr. aukščiau)." >&2
+exit $rc

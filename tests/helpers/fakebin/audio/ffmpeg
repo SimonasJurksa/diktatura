@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Testų ffmpeg: „-f pulse" įrašymas pakeičiamas sintetiniu garsu (stereo sinusas realiu laiku iki SIGINT);
+# visa kita (mp3 konversija ir pan.) — tikras ffmpeg ($REAL_FFMPEG).
+for a in "$@"; do [ "$a" = pulse ] && pulse=1; done
+if [ -n "${pulse:-}" ]; then
+  out="${!#}"
+  exec "$REAL_FFMPEG" -hide_banner -loglevel error -re -f lavfi -i "sine=frequency=440:sample_rate=16000" \
+    -ac 2 -ar 16000 -c:a pcm_s16le -y "$out"
+fi
+exec "$REAL_FFMPEG" "$@"

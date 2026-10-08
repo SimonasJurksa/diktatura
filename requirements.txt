@@ -1,0 +1,10 @@
+# Diktatūra — vienas .venv (Python 3.10), BE torch. Diegiama: make setup
+# ASR: faster-whisper (CTranslate2 int8; Ąžuolas ir Whisper modeliai)
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+# Kalbėtojai: sherpa-onnx (ONNX embedding'ai, diarizacija) + sklearn (recluster)
+sherpa-onnx==1.13.8
+numpy==2.2.6
+scikit-learn==1.7.2
+# Testai
+pytest

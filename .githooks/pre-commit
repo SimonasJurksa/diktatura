@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Diktatūra privatumo sargas — tikrina staged pakeitimus prieš commit.
+exec "$(cd "$(dirname "$0")" && pwd)/privacy-scan.sh" staged

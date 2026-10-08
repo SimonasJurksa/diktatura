@@ -1,0 +1,60 @@
+# Diktatūra — NUMATYTIEJI nustatymai (versijuojama; „Atkurti numatytus" grąžina šias reikšmes).
+# Tavo nustatymai: ~/.config/diktatura/diktatura.conf (sukuriamas iš šio failo pirmą kartą).
+# Formatas: KEY=VALUE (be tarpų ir kabučių). Komentarai — TIK atskiroje eilutėje.
+# Skaito: bash (bin/common.sh, per `.`) ir python (diktatura/config.py) — gyvai, kiekvieną kartą.
+
+# ── Įrašymas ──
+# VOX: kiek sekundžių tylos uždaro įrašo failą
+VOX_SILENCE_SEC=5
+# VOX: trumpesni įrašai (blyksniai) atmetami, sekundės
+VOX_MIN_SEC=1.5
+# VOX: 1 = adaptyvus slenkstis (kambario triukšmas + atsarga), 0 = fiksuotas VOX_GATE_DB
+VOX_ADAPTIVE=1
+# VOX: kiek dB virš triukšmo reikia, kad įrašas PRASIDĖTŲ
+VOX_OPEN_MARGIN=15
+# VOX: kiek dB virš triukšmo užtenka, kad įrašas NEUŽSIDARYTŲ (tyli kalba)
+VOX_CLOSE_MARGIN=8
+# VOX: fiksuotas slenkstis dBFS (naudojamas tik kai VOX_ADAPTIVE=0)
+VOX_GATE_DB=-35
+# Slack: kiek sekundžių be skambučio srauto, kol įrašas sustabdomas
+SLACK_GRACE_SEC=4
+# Saugiklis: maksimali vieno įrašo trukmė sekundėmis (pvz. paliktas huddle)
+MAX_REC_SEC=7200
+
+# ── Transkripcija ──
+# 1 = transkribuoti automatiškai; 0 = tik įrašyti
+AUTOTRANSCRIBE=1
+# immediate = iškart po įrašo; deferred = naktį 01:30
+MODE=immediate
+# azuolas-ct2 (geriausia LT kokybė) arba medium (greičiau, mažiau RAM)
+MODEL=azuolas-ct2
+# CPU gijų skaičius transkripcijai
+THREADS=6
+# 1 = nuolat įkrautas ASR serveris (greitesnis tekstas po diktavimo; laiko ~3 GB RAM, kol yra darbo)
+ASR_SERVER=0
+# po kiek minučių be darbo serveris iškrauna modelį (RAM grąžinama)
+ASR_SERVER_IDLE_MIN=15
+
+# ── VAD (kalbos filtras prieš transkripciją) ──
+# 1 = prieš kraunant modelį rasti kalbą (Silero VAD): be kalbos — praleisti, kitaip apkarpyti iki kalbos
+VAD_FILTER=1
+# mažiausiai kalbos sekundžių kanale, kad būtų transkribuojama (mažiau — praleidžiama, failas laikomas tuščiu)
+VAD_MIN_SPEECH_SEC=0.8
+# kiek sekundžių palikti prieš ir po kiekvienos kalbos atkarpos (kad nenukirstų žodžių)
+VAD_PAD_SEC=0.2
+# 1 = Whisper'iui duoti tik kalbos atkarpas (laikai perskaičiuojami); 0 = visą kanalą (Whisper turi savo VAD)
+VAD_TRIM=0
+
+# ── Archyvas ──
+# 1 = tuščią tekstą ir jo garsą iškart ištrinti
+DELETE_EMPTY=1
+# 1 = po transkripcijos wav -> mp3 (taupo vietą); 0 = palikti wav
+ARCHIVE_MP3=1
+# mp3 bitų greitis, kbps
+ARCHIVE_KBPS=64
+# Teksto lange rodomų paskutinių dienų skaičius (senesnės nutrimminamos)
+RETENTION_DAYS=2
+
+# ── Debug ──
+# 1 = detalus žurnalas ~/.local/state/diktatura/debug.log (įrenginiai, lygiai, sprendimai, RTF)
+DEBUG=0

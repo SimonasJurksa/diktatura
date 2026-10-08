@@ -16,12 +16,23 @@ Pavadinimas — kalambūras: *dikta*-vimas + *diktatūra* 🙂.
 
 ## Kaip atrodo
 
-Gyvas transkripcijų langas — **atpažįsta žmones** (kiekvienas sava spalva), kaupia tekstą pagal
-sesijas, su paieška ir kopijavimu:
+Vienas langas „Diktatūra" su trimis skiltimis. **📄 Tekstas** — gyvai besipildančios transkripcijos: žmonės
+atpažinti vardais (kiekvienas sava spalva), sesijų skyrikliai, paieška, filtrai, žymės ir grojimas nuo bet kurios
+eilutės:
 
-![Diktatūros teksto langas](docs/img/textview.png)
+![Diktatūros teksto langas](docs/img/text.png)
 
-**Status bar ikona** rodo, kas vyksta — pilka budi, raudona įrašo, geltona apdoroja:
+**🎓 Apmokymai** — kai kalba nepažįstamas balsas, jis tekste pažymimas „Kolega?nezN". Čia jo paklausai, matai, ką
+sakė, ir įrašai vardą — nuo tada atpažįstamas automatiškai, o seni tekstai pasitaiso patys:
+
+![Apmokymai](docs/img/training.png)
+
+**⚙ Nustatymai** — viskas su paaiškinimais lietuviškai; pakeitimai veikia iškart, be perkrovimo:
+
+![Nustatymai](docs/img/settings.png)
+
+**Status bar ikona** rodo, kas vyksta — pilka budi, raudona įrašo, geltona apdoroja; pulsuoja, kai laukia
+nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik — iškart Nustatymai:
 
 ![Status bar būsenos](docs/img/tray.png)
 
@@ -31,23 +42,20 @@ sesijas, su paieška ir kopijavimu:
 
 ## Ką daro
 
-- 🤖 **Pats įsijungia** — aptinka Slack skambutį ir automatiškai pradeda/sustabdo įrašymą; veikia
-  fone (systemd), startuoja po kompiuterio perkrovimo. Nereikia nieko spausti.
-- 👥 **Atpažįsta žmones vardais** — iš balso („pirštų atspaudo"): tekste matai `Tu / Jonas / Petras: …`.
-  Nežinomą balsą išsaugo; priskyrus vardą — ateity atpažįsta automatiškai.
-- 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi, atskirtos pagal sesijas
-  (data · VOX/SLACK). Laiko paskutines 2 dienas (senesnį automatiškai valo).
-
-- 🎙️ **Auto-įrašymas** — aptinka Slack skambutį (PulseAudio) ir pats pradeda/sustabdo; arba
-  **VOX** režimas (balso aktyvumas) diktavimui bet kada, be skambučio.
+- 🤖 **Pats įsijungia** — aptinka Slack skambutį ir automatiškai pradeda/sustabdo įrašymą; arba **VOX** režimas
+  (balso aktyvumas) diktavimui bet kada. Veikia fone (systemd), startuoja po kompiuterio perkrovimo.
 - 📝 **Transkripcija lietuviškai** — [Ąžuolas](https://huggingface.co/akisviete/azuolas-whisper-lt)
-  (whisper-large-v3 + LIEPA-3) per faster-whisper (CT2, int8). Geriausia LT kokybė.
-- 👥 **Kalbėtojų atpažinimas vardais** — stereo (tavo mikrofonas vs sistemos garsas) + diarizacija
-  (sherpa-onnx, be torch) + balso registracija. Tekste: `Tu / Jonas / Petras: …`.
-- 🌙 **Lankstus režimas** — iškart po skambučio arba naktinis paketinis transkribavimas (01:30).
-- 🖥️ **Status bar ikona** (⚪/🔴/🟡) + **gyvas teksto langas** su paieška, spalvotais kalbėtojais,
-  sesijų skyrikliais, kopijavimu (DI analizei).
+  (whisper-large-v3 + LIEPA-3) per faster-whisper (CT2, int8). Geriausia LT kokybė (testuose WER ~2–3 %).
+- 👥 **Atpažįsta žmones vardais** — stereo (tavo mikrofonas vs sistemos garsas) + balso „pirštų atspaudai"
+  (sherpa-onnx, be torch). Tekste: `Tu / Jonas / Petras: …`. Nežinomus balsus išmokai **Apmokymuose**.
+- 🔇 **Kalbos filtras** — įrašai be kalbos (kosulys, triukšmas, muzika) atmetami dar prieš kraunant modelį.
+- 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi; paieška (ir regex), filtrai pagal
+  kalbėtoją ir laikotarpį (iki viso archyvo), ⭐ žymės ir ☐ užduotys, **▶ grojimas nuo eilutės**,
+  📊 statistika (kas kiek kalbėjo), 💾 eksportas į .txt / .md.
+- 🌙 **Lankstus režimas** — iškart po skambučio arba naktinis paketinis transkribavimas (01:30);
+  pasirinktinai — nuolat įkrautas modelis greitesniam tekstui po diktavimo.
 - 💾 Po transkripcijos garsas suspaudžiamas į mp3 (vietos taupymui); tušti — ištrinami.
+- 🩺 `make doctor` — savitikra su patarimais; debug žurnalas problemoms gaudyti.
 
 ## Privatumas
 
@@ -56,52 +64,63 @@ neišeina iš tavo kompiuterio. Jokio debesies.
 
 ## Reikalavimai
 
-- Linux (testuota Ubuntu 22.04, GNOME, X11), PulseAudio.
-- `ffmpeg`, `python3`, [`uv`](https://github.com/astral-sh/uv), `make`.
+- Linux (testuota Ubuntu 22.04, GNOME, X11), PulseAudio / PipeWire (pulse).
+- `ffmpeg`, `python3` (su `gi`), [`uv`](https://github.com/astral-sh/uv), `make`, `curl`.
 - GNOME tray ikonai: `gir1.2-ayatanaappindicator3-0.1` + „AppIndicator" plėtinys.
-- ~2 GB vietos modeliui (Ąžuolas CT2 int8 ≈ 1.5 GB). CPU pakanka (GPU nebūtina).
+- Vietos: `.venv` ~0.7 GB, Ąžuolas CT2 int8 ≈ 1.5 GB (konversijos metu laikinai ~8–10 GB).
+- RAM: Ąžuolui ~3.5 GB laisvos transkripcijos metu. CPU pakanka (GPU nebūtina).
 
-## Diegimas (apžvalga)
+## Diegimas
 
 ```bash
-# 1. Aplinka + faster-whisper (ASR)
-bash plans/A/setup.sh
-# 2. Ąžuolo modelis -> CT2 (vienkartinė konversija, reikia torch laikinai)
-bash plans/A/convert_azuolas.sh
-# 3. Diarizacijos aplinka + modeliai (sherpa-onnx)
-#    (žr. plans/F/ — venv + modelių parsisiuntimas į models/diarization/)
-# 4. systemd servisai (auto-įrašymas, ikona, naktinis timer)
-make install          # įjungia įrašymo daemon (startuos po perkrovimo)
-make tray-on          # status bar ikona
+git clone https://github.com/SimonasJurksa/diktatura.git && cd diktatura
+make deps            # sistemos paketai (sudo apt)
+make install         # .venv (be torch) + kalbėtojų modeliai + servisai: ikona, naktinis 01:30, Slack režimas
+make model-convert   # Ąžuolas -> CT2 (vienkartinė konversija; torch tik laikinai)
+make doctor          # ar viskas veikia (savitikra)
 ```
+
+Kodas lieka ten, kur klonavai; **duomenys — už repo ribų**:
+nustatymai `~/.config/diktatura/`, įrašai/tekstai/balsai/modeliai `~/.local/share/diktatura/`, logai `~/.local/state/diktatura/`.
+Pašalinti servisus: `make uninstall` (duomenys lieka).
 
 ## Naudojimas
 
 ```bash
 make status               # kas vyksta: režimas, įrašai, RAM
+make doctor               # savitikra: ar viskas sudiegta ir veikia (✓/⚠/✗ + ką daryti)
 make mode-slack           # 💬 Slack skambučių aptikimas
 make mode-vox             # 🎙️ balso aktyvumas (diktavimui, be Slack)
 make immediate | defer    # transkribuoti iškart / naktį (01:30)
 make transcribe-pending   # sutranskribuoti viską dabar
+make text                 # langas: 📄 Tekstas   (make training — 🎓 Apmokymai, make settings — ⚙ Nustatymai)
+make config               # nustatymai;  make set S="VOX_SILENCE_SEC=3"  (veikia be restarto)
+make asr-server-on        # ⚡ nuolat įkrautas modelis — greitesnis tekstas po diktavimo (~3 GB RAM; off — išjungti)
+make debug-on             # 🐞 detalus žurnalas problemoms gaudyti (make dlogs — gyvai; make debug-off)
 make help                 # visos komandos
 ```
 
 ### Kalbėtojų vardai
 
+Patogiausia — **🎓 Apmokymai** lange (ikonos meniu „Apmokymai paruošti (N)" arba `make training`): paklausyk,
+pažiūrėk, ką sakė, įrašyk vardą. Ten pat galima pervadinti ar sujungti registruotus balsus. Komandinėje eilutėje:
+
 ```bash
-make name-unknown                 # nežinomi balsai (pavyzdžiai), laukiantys vardo
-paplay ~/<repo>/speakers/pending/nez3.wav   # paklausyti
-make assign ID=nez3 NAME=Jonas    # priskirti vardą (įsimenamas ateičiai)
+make name-unknown                 # nežinomi balsai (pavyzdžiai) + komanda paklausyti
+make assign ID=nez3 NAME=Jonas    # priskirti vardą (įsimenamas ateičiai; tekstuose pakeičiamas)
 ```
-Nežinomas balsas automatiškai išsaugo pavyzdį; priskyrus vardą, ateities transkripcijos
-jį atpažins. Balsai laikomi lokaliai (`speakers/`, **neversijuojama**).
+Balsai laikomi lokaliai (`~/.local/share/diktatura/speakers/`, **niekada ne repo**).
 
 ## Architektūra (trumpai)
 
-- `scripts/` — daemon'ai (auto-įrašymas, VOX), tray ikona, teksto langas, pipeline.
-- `plans/A/` — ASR (faster-whisper + Ąžuolas): transkripcija, vardų priskyrimas.
-- `plans/F/` — kalbėtojų atpažinimas (sherpa-onnx diarizacija + balso embeddingai).
-- `Makefile` — visas valdymas. `wispr.conf` — nustatymai.
+- `diktatura/` — Python paketas: `audio/` (VOX, kalbos filtras), `asr/` (transkripcija + vardai, nuolatinis serveris),
+  `speakers/` (balsų atpažinimas, saugykla), `ui/` (ikona, langas: Tekstas · Apmokymai · Nustatymai),
+  `paths.py` (visi keliai), `config.py` (nustatymai), `doctor.py` (savitikra).
+- `bin/` — shell įėjimai (Slack daemon, transkripcijos eilė, naktinis, rankinis įrašymas).
+- `systemd/` — servisų šablonai; `tools/` — modelių konversija/atsisiuntimas, benchmark.
+- `Makefile` — visas valdymas. Numatytieji nustatymai — `config/diktatura.conf.default`.
+- Plačiau: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Prisidėti: [CONTRIBUTING.md](CONTRIBUTING.md)
+  (`make test` — ~1 min, `make test-full`, `make test-e2e`).
 
 ## Padėka / modeliai
 

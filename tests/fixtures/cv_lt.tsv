@@ -1,0 +1,7 @@
+# Mozilla Common Voice 22.0 (lt), test dalis — CC0-1.0. Vienas kalbėtojas (vyras). Atsisiunčia: make fixtures
+# Šaltinis: nekeičiamas HF veidrodis (revizija prisegta); kiekvienas klipas — baitų intervalas nesuspaustame tar.
+# id	baitai	sha256	tekstas
+common_voice_lt_23709170	305664-359660	e6a73a9ac9b52bb8068b8e41e7ee0dfd7a9c1f3819e3289965179646240ecac3	Šiuo vardu miestas buvo žinomas romėnų ir Bizantijos laikais.
+common_voice_lt_23709184	857088-927020	4c70c29e4df8c58b714b3aa6e7e5b31e5d2041f017407cc647c290bd3b4933a5	Generalinio sekretoriaus pareigose didelį dėmesį skyrė klimato kaitos klausimams bei Darfūro krizės sprendimui.
+common_voice_lt_23709185	927744-974060	c8a3cff18d6cd8391dd66e9401d3cfe50fba621bcc6b8ccdd6e51f981f474aec	Daugelyje maisto produktų padidėjęs druskos kiekis veikia kaip konservantas.
+common_voice_lt_23709186	974848-1024044	99156a2af4f77caad8777868baf17bbe98f61a29ce76041f30d198f25b7a576a	Muilo galima rasti ir metalo apdirbimo staklių tepimo ir aušinimo skystyje.

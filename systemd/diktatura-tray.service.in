@@ -1,0 +1,18 @@
+[Unit]
+Description=Diktatūra — status bar ikona (⚪ budi / 🔴 rašo / 🟡 apdoroja)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# SISTEMOS python3 (turi gi/GTK); .venv jo neturi. DISPLAY paprastai jau importuotas į --user aplinką.
+WorkingDirectory=@REPO@
+Environment=PYTHONPATH=@REPO@
+ExecStart=/usr/bin/python3 -m diktatura.ui.tray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+
+# Šablonas: @REPO@ pakeičia `make install-units` (diegiama į ~/.config/systemd/user/).

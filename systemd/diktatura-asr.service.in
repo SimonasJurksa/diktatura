@@ -1,0 +1,18 @@
+[Unit]
+Description=Diktatūra — nuolat įkrautas ASR modelis (greitesnis tekstas; iškrauna po ASR_SERVER_IDLE_MIN be darbo)
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=PYTHONPATH=@REPO@
+ExecStart=@REPO@/.venv/bin/python -m diktatura.asr.server
+# Kaip transkripcija: žemiausias prioritetas — garso įrašymas visada svarbiau
+Nice=19
+IOSchedulingClass=idle
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+
+# Šablonas: @REPO@ pakeičia `make install-units`. Įjungiama nustatymu ASR_SERVER=1 (Nustatymai) arba make asr-server-on.

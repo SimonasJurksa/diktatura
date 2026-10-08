@@ -1,0 +1,11 @@
+[Unit]
+Description=Diktatūra — naktinė transkripcija (visi įrašai be teksto)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @REPO@/bin/transcribe-pending.sh
+# Žema pirmenybė, kad net jei vartotojas dar dirba — netrukdytų
+Nice=10
+IOSchedulingClass=idle
+
+# Šablonas: @REPO@ pakeičia `make install-units` (diegiama į ~/.config/systemd/user/).
