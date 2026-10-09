@@ -28,7 +28,9 @@ Diktatūra jos neįrašinėja):
 
 ![Apmokymai](docs/img/training.png)
 
-**⚙ Nustatymai** — viskas su paaiškinimais lietuviškai; pakeitimai veikia iškart, be perkrovimo:
+**⚙ Nustatymai** — viskas su paaiškinimais lietuviškai; pakeitimai veikia iškart, be perkrovimo. Apačioje
+„Atstatymas ir duomenys": atkurti numatytus nustatymus ir **ištrinti įrašus ir tekstus** (pradėti kaupti iš naujo;
+vardų atpažinimas lieka, nebent pažymėsi) — abu tik patvirtinus:
 
 ![Nustatymai](docs/img/settings.png)
 
@@ -53,6 +55,8 @@ nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik
   klik ant eilutės → **✎ Kas kalbėjo?** — eilutė pataisoma, o balsas išmokstamas (taip pat ir tavo, kai kalbi
   prisijungęs telefonu).
 - 🔇 **Kalbos filtras** — įrašai be kalbos (kosulys, triukšmas, muzika) atmetami dar prieš kraunant modelį.
+- 🎧 **Be aido tavo eilutėse** — jei kolegų garsas iš ausinių elektriškai prasiskverbia į mikrofoną (dažna su
+  ausinėmis kompiuterio lizde), jo kopija prieš transkripciją atimama (sistemos garso kanalas — tikslus etalonas).
 - 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi; paieška (ir regex), filtrai pagal
   kalbėtoją ir laikotarpį (iki viso archyvo), ⭐ žymės ir ☐ užduotys, **▶ grojimas nuo eilutės**,
   📊 statistika (kas kiek kalbėjo; galima nunulinti), 💾 eksportas į .txt / .md.
@@ -98,6 +102,8 @@ make mode-vox             # 🎙️ balso aktyvumas (diktavimui, be Slack)
 make immediate | defer    # transkribuoti iškart / naktį (01:30)
 make transcribe-pending   # sutranskribuoti viską dabar
 make text                 # langas: 📄 Tekstas   (make training — 🎓 Apmokymai, make settings — ⚙ Nustatymai)
+make tray-on              # grąžinti ikoną (jei meniu paspaudei „Išeiti" — įrašymas tuo metu veikia toliau)
+make desktop              # „Diktatūra" programų meniu (prisegama prie doko: grąžina ikoną ir atidaro langą)
 make config               # nustatymai;  make set S="VOX_SILENCE_SEC=3"  (veikia be restarto)
 make asr-server-on        # ⚡ nuolat įkrautas modelis — greitesnis tekstas po diktavimo (~3 GB RAM; off — išjungti)
 make debug-on             # 🐞 detalus žurnalas problemoms gaudyti (make dlogs — gyvai; make debug-off)

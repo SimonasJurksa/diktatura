@@ -21,13 +21,14 @@ make doctor          # ar viskas vietoje
 
 | Kur | Kas |
 |---|---|
-| `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py` | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
-| `diktatura/audio/` | `vox.py` (VOX daemon'as, `VoxGate` — gryna logika), `prefilter.py` (Silero VAD) |
+| `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py`, `reset.py` | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
+| `diktatura/audio/` | `vox.py` (VOX daemon'as, `VoxGate` — gryna logika), `prefilter.py` (Silero VAD), `echo.py` (kolegų garso šalinimas iš mikrofono kanalo) |
 | `diktatura/asr/` | `transcribe.py` (mono), `transcribe_named.py` (stereo + vardai), `dialog.py` (de-dup), `server.py`/`client.py` (nuolat įkrautas modelis) |
 | `diktatura/speakers/` | `store.py` (balsų saugykla, stdlib), `speakerlib.py` (embedding'ai, griežtas vardų priskyrimas), `teach.py` (mokymasis iš pataisymo), `migrate.py` / `relabel.py` (balso modelio keitimas), įrankiai |
 | `diktatura/ui/` | GTK (sistemos `python3`): `app.py` (langas), `text_page.py`, `training_page.py`, `settings_page.py`, `tray.py` |
 | `bin/` | shell įėjimai (`common.sh` — keliai/nustatymai bash'ui; laikyti sinchronizuotą su `paths.py`) |
 | `systemd/*.in` | servisų šablonai (`@REPO@` → `make install-units`) |
+| `desktop/*.in` | programų meniu / doko paleidiklis (`@REPO@` → `make desktop`) |
 | `tests/` | pytest; `tests/helpers/` — sintetinis garsas, netikri įrankiai (`fakebin/`), `testenv.py` |
 
 Taisyklės:

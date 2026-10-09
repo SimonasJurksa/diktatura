@@ -34,6 +34,8 @@ THREADS=6
 ASR_SERVER=0
 # po kiek minučių be darbo serveris iškrauna modelį (RAM grąžinama)
 ASR_SERVER_IDLE_MIN=15
+# 1 = prieš transkripciją iš mikrofono kanalo atimti kolegų garso kopiją (ausinių lizdo persiklojimas / aidas)
+ECHO_CANCEL=1
 
 # ── VAD (kalbos filtras prieš transkripciją) ──
 # 1 = prieš kraunant modelį rasti kalbą (Silero VAD): be kalbos — praleisti, kitaip apkarpyti iki kalbos

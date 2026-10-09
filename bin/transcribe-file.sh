@@ -26,6 +26,8 @@ if ! flock -n 9; then
   log "EILĖJE (laukia ankstesnės transkripcijos): $(basename "$IN")"
   flock 9
 fi
+# kol laukė eilėje, failas galėjo būti ištrintas (Nustatymai -> „Ištrinti įrašus ir tekstus")
+[ -f "$IN" ] || { log "PRALEISTA (failas ištrintas, kol laukė eilėje): $(basename "$IN")"; exit 0; }
 
 chans="$(ffprobe -v error -select_streams a:0 -show_entries stream=channels -of csv=p=0 "$IN" 2>/dev/null)"
 if [ "$chans" = "2" ]; then OUT="$BASE.named.txt"; MOD="diktatura.asr.transcribe_named"

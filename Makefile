@@ -18,6 +18,7 @@ PY := $(REPO)/.venv/bin/python
 RUN := PYTHONPATH=$(REPO) HF_HOME=$(MODELS)/hf $(PY) -m
 CFG := PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.config
 SYSD := $(HOME)/.config/systemd/user
+APPS := $(or $(DIKTATURA_APPS_DIR),$(or $(XDG_DATA_HOME),$(HOME)/.local/share)/applications)
 SC := systemctl --user
 UNITS := diktatura-autorecord.service diktatura-vox.service diktatura-tray.service \
          diktatura-nightly.service diktatura-nightly.timer diktatura-asr.service
@@ -181,16 +182,21 @@ models: ## Atsisiųsti kalbėtojų modelius (~35 MB, SHA-256 tikrinami)
 	@bash $(REPO)/tools/fetch_models.sh
 model-convert: ## Ąžuolą konvertuoti į CT2 int8 (vienkartinis; reikia ~8–10 GB laisvo disko)
 	@bash $(REPO)/tools/convert_azuolas.sh
+desktop: ## Įdiegti „Diktatūra" į programų meniu (prisegama prie doko; grąžina ikoną ir atidaro langą)
+	@mkdir -p $(APPS) && sed 's|@REPO@|$(REPO)|g' $(REPO)/desktop/diktatura.desktop.in > $(APPS)/diktatura.desktop && \
+	 (command -v update-desktop-database >/dev/null && update-desktop-database -q $(APPS) || true) && \
+	 echo "✓ programų meniu: Diktatūra ($(APPS)/diktatura.desktop) — prisegti: dešinys klik → „Pridėti prie mėgstamiausių“"
 install-units: ## Įdiegti/atnaujinti systemd --user servisus (iš systemd/*.in šablonų)
 	@mkdir -p $(SYSD); for u in $(UNITS); do sed 's|@REPO@|$(REPO)|g' $(REPO)/systemd/$$u.in > $(SYSD)/$$u; done; \
 	 $(SC) daemon-reload && echo "✓ servisai įdiegti/atnaujinti ($(SYSD))"
-install: hooks setup models install-units ## Pilnas įdiegimas: venv, modeliai, servisai, ikona, naktinis
+install: hooks setup models install-units desktop ## Pilnas įdiegimas: venv, modeliai, servisai, ikona, naktinis, meniu
 	@$(SC) enable --now diktatura-tray diktatura-nightly.timer
 	@for s in $(RECORDERS); do $(SC) is-enabled -q $$s 2>/dev/null && exit 0; done; $(MAKE) -s mode-slack
 	@test -f $(MODELS)/azuolas-ct2/model.bin || echo "⚠ Ąžuolo modelio nėra: make model-convert (arba make model-medium)"
 	@echo "✓ įdiegta. Būsena: make status"
 uninstall: ## Pašalinti servisus (duomenys ir nustatymai lieka)
 	@$(SC) disable --now $(UNITS) 2>/dev/null; for u in $(UNITS); do rm -f $(SYSD)/$$u; done; $(SC) daemon-reload; \
+	 rm -f $(APPS)/diktatura.desktop; \
 	 echo "✓ servisai pašalinti. Duomenys liko: $(DATA_DIR) , nustatymai: $(CONFIG_DIR)"
 
 ## ——— Privatumas / testai ———
@@ -207,7 +213,7 @@ test-e2e: ## E2E: virtualus garsas (PulseAudio null-sink) + tikri daemon'ai (tav
 fixtures: ## Atsisiųsti LT kalbos testų klipus (Common Voice, CC0, ~220 KB; ne į repo)
 	@bash $(REPO)/tools/fetch_fixtures.sh
 
-.PHONY: help doctor debug-on debug-off dlogs status recordings logs tlogs text settings training mode-vox mode-slack mode-off start stop restart rec-toggle \
+.PHONY: help desktop speakers-migrate speakers-relabel doctor debug-on debug-off dlogs status recordings logs tlogs text settings training mode-vox mode-slack mode-off start stop restart rec-toggle \
         config set config-edit config-reset auto-on auto-off immediate defer model-azuolas model-medium \
         asr-server-on asr-server-off \
         transcribe-pending transcribe stop-transcribe nightly-on nightly-off nightly-now \

@@ -8,8 +8,9 @@ skamba kolegų kanale (prisijungęs telefonu), eilutė žymima „Tu".
 Nežinomas balsas -> „Kolega?nezN" (pavyzdys išsaugomas į pending; vardą priskiria Apmokymai).
 Klasterizavimo inference metu NEREIKIA — tiesioginis embedding ↔ registras sutapimas.
 
-Pipeline: loudnorm/kanalui -> VAD (be kalbos -> modelis nekraunamas; apkarpymas) -> Whisper -> laikai atgal į
-originalą -> R segmentams vardai -> de-dup (Tu vs kolegos) -> dialogas.
+Pipeline: L — kolegų garso kopijos atėmimas (ECHO_CANCEL, diktatura.audio.echo) -> loudnorm/kanalui -> VAD (be kalbos
+-> modelis nekraunamas; apkarpymas) -> Whisper -> laikai atgal į originalą -> R segmentams vardai -> de-dup
+(Tu vs kolegos) -> dialogas.
 
 Naudojimas:
     python -m diktatura.asr.transcribe_named <stereo.wav> [--model azuolas-ct2] [--threads 6]
@@ -43,6 +44,33 @@ def _ff(args):
 def extract(src, ch, dst):
     _ff(["-i", src, "-af", f"pan=mono|c0=c{ch},{LOUDNORM}", "-ar", "16000", "-ac", "1",
          "-c:a", "pcm_s16le", dst])
+
+
+def extract_me(src, dst, td, enabled=True):
+    """L (mikrofonas) -> dst (16 kHz, loudnorm). enabled: prieš loudnorm atimama kolegų garso kopija
+    (diktatura.audio.echo — kombinuoto lizdo elektrinis persiklojimas). -> echo info (dict) arba None."""
+    if not enabled:
+        extract(src, 0, dst)
+        return None
+    from diktatura.audio import echo
+    raw = subprocess.check_output(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", src,
+                                   "-ac", "2", "-ar", "16000", "-f", "s16le", "-"])
+    x = np.frombuffer(raw, dtype=np.int16).reshape(-1, 2)
+    del raw
+    left, right = x[:, 0].astype(np.float32) / 32768.0, x[:, 1].astype(np.float32) / 32768.0
+    del x
+    clean, info = echo.cancel(left, right)
+    del left, right
+    if not info["applied"]:
+        extract(src, 0, dst)
+        return info
+    tmp = os.path.join(td, "me_ec.wav")
+    with wave.open(tmp, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+        w.writeframes((np.clip(clean, -1, 1) * 32767).astype(np.int16).tobytes())
+    del clean
+    _ff(["-i", tmp, "-af", LOUDNORM, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", dst])
+    return info
 
 
 def load_wav(path):
@@ -114,10 +142,15 @@ def run(argv=None, get_model=models.load) -> int:
     with tempfile.TemporaryDirectory() as td:
         me_wav = os.path.join(td, "me.wav")
         them_wav = os.path.join(td, "them.wav")
-        extract(str(audio), 0, me_wav)
+        ec = extract_me(str(audio), me_wav, td, bool(config.load()["ECHO_CANCEL"]))
         extract(str(audio), 1, them_wav)
         me_audio, them_audio = load_wav(me_wav), load_wav(them_wav)
     dur = len(me_audio) / 16000
+    if ec is not None:
+        print("Aidas (kolegų garsas mikrofone): " + (
+            f"pašalintas — poslinkis {ec['lag_ms']} ms, koherencija {ec['coherence']}" if ec["applied"]
+            else f"nerastas (stiprumas {ec['strength']})"))
+        debug.log("asr", f"{audio.name}: aido šalinimas {ec}")
 
     # VAD: kur kalba? (prieš kraunant ~3 GB modelį)
     me_plan = vad.plan(me_audio)

@@ -121,3 +121,22 @@ def test_e7_pending_skips_done_skipped_active_and_fresh(env, fake_asr):
     assert sorted(trace_names(fake_asr)) == ["slack_20260101_150006.wav", "vox_20260101_150003.wav"]
     again = env.sh("bash", TPENDING)                                  # antras kartas — nieko naujo
     assert "nieko transkribuoti" in again.stderr or len(trace_names(fake_asr)) == 2
+
+
+def test_e8_file_deleted_while_waiting_in_queue_is_skipped(env, fake_asr, monkeypatch):
+    """Nustatymuose „Ištrinti įrašus ir tekstus", kol įrašas laukė eilėje -> praleidžiamas tyliai (ne klaida)."""
+    import fcntl
+    env.write_conf(ARCHIVE_MP3=0)
+    f = make_wav(env, "vox_20260101_130000.wav")
+    lock = env.run / "transcribe.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)                                   # „vyksta kita transkripcija"
+        p = subprocess.Popen(["bash", str(TFILE), str(f)], stdout=subprocess.DEVNULL)
+        deadline = time.time() + 10
+        while "EILĖJE" not in env.log("transcribe") and time.time() < deadline:
+            time.sleep(0.05)
+        f.unlink()
+    assert p.wait(timeout=20) == 0
+    assert "PRALEISTA" in env.log("transcribe") and not trace_names(fake_asr)
+    assert not f.with_suffix(".named.txt").exists()

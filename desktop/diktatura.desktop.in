@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Diktatūra
+GenericName=Balsas į tekstą
+Comment=Lokalus lietuviškas balso-į-tekstą: įrašai, tekstai, vardai (atidaro langą ir grąžina ikoną)
+Exec=@REPO@/bin/diktatura-open.sh
+Icon=@REPO@/icons/diktatura-idle.png
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+Keywords=diktavimas;transkripcija;balsas;tekstas;
+StartupWMClass=diktatura
+StartupNotify=true

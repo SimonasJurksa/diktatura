@@ -73,7 +73,7 @@ class Tray:
         self.it_mode = self._item("Režimas: …", None)
         self.menu.append(Gtk.SeparatorMenuItem())
         self._item("Atidaryti įrašų aplanką", lambda: subprocess.Popen(["xdg-open", str(paths.RECORDINGS)]))
-        self._item("Išeiti iš ikonos", Gtk.main_quit)
+        self._item("Išeiti", Gtk.main_quit)          # tik ikona; įrašymas (VOX / Slack servisas) veikia toliau
         self.menu.show_all()
         self.ind.set_menu(self.menu)
         self.ind.set_secondary_activate_target(self.it_settings)      # vidurinis klik -> Nustatymai

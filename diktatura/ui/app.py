@@ -127,6 +127,8 @@ class App(Gtk.Application):
 
 
 def main(argv=None) -> int:
+    GLib.set_prgname("diktatura")           # WM_CLASS -> dokas susieja langą su prisegtu „Diktatūra" (desktop/)
+    GLib.set_application_name("Diktatūra")
     app = App(os.environ.get("DIKTATURA_APP_ID") or APP_ID)
     return app.run([sys.argv[0]] + list(sys.argv[1:] if argv is None else argv))
 

@@ -4,9 +4,12 @@ Laukai generuojami iš config.SCHEMA (grupės, tipai, ribos, lietuviški paaišk
 automatiškai atsiranda ir čia. Viršuje — įrašymo režimas (VOX / Slack / išjungta; systemd per diktatura.services).
 „Išsaugoti": validacija (klaida rodoma prie lauko, failas nekeičiamas) -> config.save (atominis rašymas).
 Daemon'ai nustatymus perskaito patys (VOX kas ~5 s, Slack kiekvieną ciklą) — restarto nereikia.
-„Atkurti numatytus" -> config/diktatura.conf.default.
+Apačioje, toli nuo „Išsaugoti" — „Atstatymas ir duomenys": „Atkurti numatytus nustatymus…" (patvirtinimas su
+pasikeisiančių nustatymų sąrašu -> config/diktatura.conf.default) ir „Ištrinti įrašus ir tekstus…" (patvirtinimas su
+pasirinkimais: įrašai ir tekstai / laukiantys vardo balsai / vardų atpažinimas — diktatura.reset). Abiejuose
+dialoguose numatytasis mygtukas — „Atšaukti".
 """
-from diktatura import config, services
+from diktatura import config, reset, services
 from diktatura.ui.gtk import Gdk, Gtk, button, label
 
 MODES = ("vox", "slack", "off")
@@ -36,6 +39,7 @@ class SettingsPage(Gtk.Box):
                 groups.append(s.group)
         for g in groups:
             body.pack_start(self._group_frame(g, [s for s in config.SCHEMA if s.group == g]), False, False, 0)
+        body.pack_start(self._reset_frame(), False, False, 0)
         sw.add(body)
         self.pack_start(sw, True, True, 0)
 
@@ -44,8 +48,6 @@ class SettingsPage(Gtk.Box):
             getattr(bar, f"set_margin_{m}")(10)
         self.msg = label("", wrap=True)
         bar.pack_start(self.msg, True, True, 0)
-        bar.pack_start(button("Atkurti numatytus", self.on_reset_clicked,
-                              "Grąžinti visas reikšmes į numatytąsias (config/diktatura.conf.default)"), False, False, 0)
         self.btn_save = button("Išsaugoti", self.save, css="suggested-action")
         bar.pack_start(self.btn_save, False, False, 0)
         self.pack_start(Gtk.Separator(), False, False, 0)
@@ -73,6 +75,21 @@ class SettingsPage(Gtk.Box):
             self.mode_btns[mode] = rb
             grid.attach(rb, 0, i, 1, 1)
             grid.attach(label(desc, css="dk-help", wrap=True), 1, i, 1, 1)
+        return fr
+
+    def _reset_frame(self):
+        fr, grid = self._frame("Atstatymas ir duomenys")
+        self.btn_defaults = button("↺ Atkurti numatytus nustatymus…", self.on_reset_clicked,
+                                   "Grąžinti visas reikšmes į numatytąsias (prieš tai paklausiama)")
+        self.btn_wipe = button("🗑 Ištrinti įrašus ir tekstus…", self.on_wipe_clicked,
+                               "Pradėti kaupti iš naujo (prieš tai paklausiama, ką trinti)", css="destructive-action")
+        rows = ((self.btn_defaults, "Visi aukščiau esantys nustatymai grįžta į numatytuosius. Įrašymo režimas nesikeičia."),
+                (self.btn_wipe, "Ištrinami įrašai (garsas) ir tekstai — kaupimas prasideda iš naujo. Vardų atpažinimas "
+                                "(registruoti balsai) lieka, nebent pažymėsi ir jį."))
+        for i, (b, help_) in enumerate(rows):
+            b.set_halign(Gtk.Align.START)
+            grid.attach(b, 0, 2 * i, 1, 1)
+            grid.attach(label(help_, css="dk-help", wrap=True), 0, 2 * i + 1, 1, 1)
         return fr
 
     def _group_frame(self, group, settings):
@@ -227,17 +244,96 @@ class SettingsPage(Gtk.Box):
         self.set_msg(" · ".join(notes), "dk-ok")
         return True
 
-    def on_reset_clicked(self) -> None:
+    # ── atstatymas ──
+    def run_dialog(self, dlg) -> int:
+        """Atskirai — testai jį pakeičia (dialogo nerodo)."""
+        return dlg.run()
+
+    def _confirm(self, title, text, ok_label):
         dlg = Gtk.MessageDialog(transient_for=self.get_toplevel() if self.win else None, modal=True,
-                                message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.YES_NO,
-                                text="Atkurti numatytus nustatymus?")
-        dlg.format_secondary_text("Visos reikšmės bus grąžintos į numatytąsias. Įrašymo režimas nesikeis.")
-        resp = dlg.run()
+                                message_type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.NONE, text=title)
+        dlg.format_secondary_text(text)
+        dlg.add_button("Atšaukti", Gtk.ResponseType.CANCEL)
+        ok = dlg.add_button(ok_label, Gtk.ResponseType.OK)
+        ok.get_style_context().add_class("destructive-action")
+        dlg.set_default_response(Gtk.ResponseType.CANCEL)             # Enter — atšaukia
+        return dlg
+
+    def default_changes(self) -> list:
+        """Kurie nustatymai pasikeistų (lyginama su tuo, kas dabar lange, įskaitant neišsaugotus)."""
+        dflt, cur = config.defaults(), self.values()
+        return [k for k in self.widgets if config.coerce(k, cur[k]) != config.coerce(k, dflt.get(k, ""))]
+
+    def on_reset_clicked(self) -> bool:
+        changes = self.default_changes()
+        if not changes:
+            self.set_msg("Visi nustatymai jau numatytieji — keisti nėra ką", "dk-ok")
+            return False
+        names = [config.BY_KEY[k].label for k in changes]
+        shown = ", ".join(names[:6]) + (f" ir dar {len(names) - 6}" if len(names) > 6 else "")
+        dlg = self._confirm("Atkurti numatytus nustatymus?",
+                            f"Pasikeis {len(changes)} nustatym.: {shown}.\nĮrašymo režimas nesikeis.", "Atkurti")
+        resp = self.run_dialog(dlg)
         dlg.destroy()
-        if resp == Gtk.ResponseType.YES:
-            self.reset_to_defaults()
+        if resp != Gtk.ResponseType.OK:
+            self.set_msg("Atšaukta — nustatymai nepakeisti")
+            return False
+        self.reset_to_defaults()
+        return True
 
     def reset_to_defaults(self) -> None:
         config.reset()
         self.load()
         self.set_msg("✓ Atkurti numatytieji nustatymai", "dk-ok")
+
+    def wipe_dialog(self):
+        """-> (dialogas, {kategorija: Gtk.CheckButton}). Numatytai pažymėta tik „įrašai ir tekstai"."""
+        p = reset.plan()
+        rec, pend, voices = p[reset.RECORDINGS], p[reset.PENDING], p[reset.VOICES]
+        dlg = self._confirm("Ištrinti įrašus ir tekstus?",
+                            "Pasirink, ką ištrinti. Atkurti nebus galima. Nustatymai ir modeliai lieka.", "Ištrinti")
+        area = dlg.get_message_area()
+        checks = {}
+        for cat, text, on in (
+                (reset.RECORDINGS, f"Įrašai ir tekstai — {rec.count} failų ({reset.human_size(rec.size)}), "
+                                   "žymės ir statistika", True),
+                (reset.PENDING, f"Nežinomi balsai, laukiantys vardo — {pend.count}", False),
+                (reset.VOICES, f"Vardų atpažinimas — registruoti balsai ir tavo balsas ({voices.count}); "
+                               "tada žmones reikės įvardinti iš naujo", False)):
+            cb = Gtk.CheckButton(label=text)
+            cb.set_active(on)
+            cb.connect("toggled", lambda *_: dlg.set_response_sensitive(
+                Gtk.ResponseType.OK, any(c.get_active() for c in checks.values())))
+            checks[cat] = cb
+            area.pack_start(cb, False, False, 0)
+        if p["kept"]:
+            area.pack_start(label(f"Dabar rašomas ar transkribuojamas įrašas ({len(p['kept'])} f.) bus paliktas.",
+                                  css="dk-help", wrap=True), False, False, 0)
+        area.show_all()
+        return dlg, checks
+
+    def on_wipe_clicked(self) -> bool:
+        dlg, checks = self.wipe_dialog()
+        resp = self.run_dialog(dlg)
+        chosen = [c for c, cb in checks.items() if cb.get_active()]
+        dlg.destroy()
+        if resp != Gtk.ResponseType.OK or not chosen:
+            self.set_msg("Atšaukta — nieko neištrinta")
+            return False
+        return self.wipe(chosen)
+
+    def wipe(self, categories) -> bool:
+        res = reset.run(categories)
+        what = {reset.RECORDINGS: "įrašų ir tekstų failų", reset.PENDING: "laukiančių balsų",
+                reset.VOICES: "registruotų balsų"}
+        parts = [f"{what[c]}: {n}" for c, n in res["deleted"].items()]
+        msg = "✓ Ištrinta — " + ", ".join(parts)
+        if res["kept"]:
+            msg += f" · palikta (vyksta): {len(res['kept'])} f."
+        if res["errors"]:
+            msg += f" · ⚠ nepavyko: {len(res['errors'])}"
+        self.set_msg(msg, "dk-error" if res["errors"] else "dk-ok")
+        if self.win is not None:
+            self.win.text.refresh()
+            self.win.training.reload()
+        return not res["errors"]

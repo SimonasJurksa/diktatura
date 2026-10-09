@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅**
 
 ---
 
@@ -151,8 +151,8 @@ Kas padaryta:
   (`line_at_iter` — Etapo 6 grojimui/žymėms; išlieka redaguojant).
 - `ui/settings_page.py` — generuojama iš `config.SCHEMA` (grupės, tipai, ribos, LT paaiškinimai, `choice_labels`):
   įrašymo režimas (VOX / Slack / išjungta → `services`), „Išsaugoti" (klaidos prie lauko, failas nekeičiamas),
-  „Atkurti numatytus" (su patvirtinimu), `MODE=deferred` automatiškai įjungia naktinį timer. Pelės ratukas virš lauko
-  slenka puslapį (ne reikšmę). Taikymas be restarto — kaip ir anksčiau (daemon'ai perskaito patys).
+  „Atkurti numatytus" (su patvirtinimu; nuo Etapo 9 — apačioje, toli nuo „Išsaugoti"), `MODE=deferred` automatiškai
+  įjungia naktinį timer. Pelės ratukas virš lauko slenka puslapį (ne reikšmę). Taikymas be restarto — kaip ir anksčiau (daemon'ai perskaito patys).
 - Tray: meniu viršuje „⚙ Nustatymai", „🎓 Apmokymai paruošti (N)" (kai yra), „📄 Rodyti nuskaitytą tekstą";
   **vidurinis klik → Nustatymai** (`set_secondary_activate_target`).
 - Testai (broadway, langai tavo ekrane nerodomi): `tests/ui/test_main_window.py` — I1–I4, I6, CLI (vienas egzempliorius).
@@ -266,8 +266,47 @@ reikia griežčiau ir tiksliau.
   rodo „Balsai".
 - Testai: `tests/test_speakers.py` (G6–G8), `tests/test_teach.py` (G9), `tests/test_voice_model.py` (G10),
   UI — `tests/ui/test_training.py`, `tests/ui/test_text_features.py`.
-- Neišspręsta (pastebėta matuojant): ~1/5 „Tu" eilučių pokalbiuose iš tikro yra kolegų balsas (nutekėjimas, kurio
-  de-dup neatpažino, kai Whisper tą patį sakinį parašo skirtingai) — galimas kitas žingsnis: de-dup pagal balsą.
+- Pastebėta matuojant: ~1/5 „Tu" eilučių pokalbiuose iš tikro yra kolegų balsas — priežastis rasta Etape 8
+  (ausinių lizdo persiklojimas), šalinama prieš transkripciją.
+
+---
+
+## Etapas 8 — Aidas tavo kanale (kolegų garsas mikrofone) ✅ (2026-10-09)
+
+Savininkas: „nemanau, kad ausinių garsas pereina į mikrofoną — čia draiverių klausimas".
+- **Matavimas** (WAV + mp3 įrašai, kontroliuotas testas su VOX pauze): L kanale — tiesinė R kopija −20…−28 dB,
+  koherencija iki 0.9, plokščias dažnių atsakas, proporcinga garsumui → elektrinis persiklojimas kombinuotame ausinių
+  lizde (Realtek ALC285). ALSA/PulseAudio loopback'o nėra — tvarkyklės keitimas nepadėtų. Be to rasta: L ir R įraše
+  pasislinkę ~0.5–1 s (ffmpeg dviejų pulse srautų startas).
+- **Sprendimas:** `diktatura/audio/echo.py` — poslinkis ir pastovus kelias kiekvienam įrašui, kopija atimama prieš
+  loudnorm (`transcribe_named.extract_me`); nustatymas `ECHO_CANCEL` (numatytai 1). Nuotėkio nėra — nieko nedaroma.
+- **Rezultatas:** WAV įraše (radijas ausinėse) L lygis kolegoms kalbant −49.5 → −66 dB (triukšmo lygis), gaubtinių
+  koreliacija su R 0.86 → 0.15; **Whisper L kanale: 22 segmentai (17 — aiškios radijo kopijos, 515 žodž.) → 0**
+  (VAD kalbos neranda, modelis nekraunamas). Tavo kalba išlieka: vakarykščio pokalbio 5 min — tavo žodžių rasta 94 %
+  prieš ir 94 % po. Sintetiniuose testuose likutis −38…−49 dB, tavo balsas nepakitęs (koreliacija > 0.995).
+- **Riba:** vakar (koherencija tik 0.1–0.3 — kintantis, greičiausiai akustinis kelias) nuotėkis nuslopintas iki
+  triukšmo lygio, bet keli trumpi kolegų frazių segmentai L dar atpažįstami (4 → 5 per 5 min). Bandyta: ilgesnis FIR
+  (iki 512 ms) — jokio skirtumo; filtras kas 8–60 s — +1.4 dB, nepridėta. MP3 archyvas kanalų nemaišo (patikrinta).
+  Kitas žingsnis, jei kartosis: liekamojo aido slopinimas (post-filtras) — su rizika tavo kalbai, matuoti.
+- Trumpi įrašai (VOX gabalai skambučio metu, nuo ~6 s) irgi valomi (vienas blokas, griežtesnis slenkstis).
+- Testai: `tests/test_echo.py` (L1–L5, L4b).
+
+---
+
+## Etapas 9 — Atstatymas: ištrinti įrašus ir tekstus, atkurti numatytus (su patvirtinimu) ✅ (2026-10-09)
+
+Savininkas: „pratrinti visus įrašus ir tekstus ir pradėti iš naujo kaupti; RESET mygtukas su confirm; atkurti
+numatytus — ne taip arti Išsaugoti ir su patvirtinimu".
+- Nustatymų apačioje rėmelis „Atstatymas ir duomenys"; apatinėje juostoje liko tik „Išsaugoti".
+- „Atkurti numatytus nustatymus…" — dialogas su pasikeisiančių nustatymų sąrašu (jei nieko — be dialogo).
+- „Ištrinti įrašus ir tekstus…" — `diktatura/reset.py`; varnelės: įrašai ir tekstai (+ žymės, statistika, tekstų
+  kopijos; pažymėta), laukiantys vardo balsai, vardų atpažinimas (registruoti balsai, tavo balsas, seni archyvai).
+  Vardai pagal nutylėjimą NEtrinami. Vykstantys įrašymas ir transkripcija paliekami; eilėje laukę — praleidžiami.
+- Abiejuose dialoguose numatytasis mygtukas „Atšaukti", trynimo mygtukas raudonas.
+- Testai: `tests/test_reset.py` (M1–M6), `tests/test_transcribe_pipeline.py` (E8), `tests/ui/test_main_window.py`.
+- Kartu (savininkui netyčia uždarius ikoną): meniu punktas „Išeiti iš ikonos" → „Išeiti" (uždaro tik ikoną);
+  „Diktatūra" programų meniu ir doke (`make desktop`, `bin/diktatura-open.sh`: grąžina ikoną + atidaro langą).
+  Testai: `tests/test_desktop.py` (N1–N3).
 
 ---
 
@@ -307,8 +346,8 @@ reikia griežčiau ir tiksliau.
 
 | Komanda             | Kas                                                           | Trukmė          |
 | ------------------- | ------------------------------------------------------------- | --------------- |
-| `make test`         | greiti testai be modelių (A–D, F, G, I, K)                    | ~40 s ✅        |
-| `make test-full`    | + ASR su modeliais (E5–E6, H)                                 | ~1–5 min ✅     |
+| `make test`         | greiti testai be modelių (A–D, F, G, I, K, L, M, N)           | ~1.5 min ✅     |
+| `make test-full`    | + ASR ir balso modelis su tikrais modeliais (E5–E8, H)        | ~1–5 min ✅     |
 | `make test-e2e`     | virtualus garsas (PulseAudio null-sink), realūs daemon'ai (J) | ~2 min ✅       |
 | `make test-privacy` | privatumo sargas (A)                                          | ✅ veikia, ~10 s |
 | `make doctor`       | sistemos savitikra                                            | < 10 s ✅       |
@@ -435,6 +474,28 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | K2  | servisai            | `diktatura-*` aktyvūs, senų servisų nėra      |
 | K3  | `make doctor`       | visi ✓                                        |
 
+### L. Aido (kolegų garso mikrofone) šalinimas ✅ — `tests/test_echo.py`
+
+| #   | Atvejis                                              | Tikimasi                                              |
+| --- | ---------------------------------------------------- | ----------------------------------------------------- |
+| L1  | nuotėkis −20 dB, FIR, poslinkis 0.98 / 0 / −0.3 s     | poslinkis ±1 ms, likutis < −35 dB, tavo balsas nepakitęs |
+| L2  | nuotėkio nėra / sistemos garsas tylus                | nieko nedaroma                                        |
+| L3  | taikymas blokais                                     | tas pats kaip visu                                    |
+| L4  | tuščias / labai trumpas įrašas                       | nelūžta                                               |
+| L4b | 8 s įrašas su nuotėkiu / be jo                       | valomas / neliečiamas                                 |
+| L5  | transkripcijos L paruošimas su / be `ECHO_CANCEL`    | be — R kopija yra; su — nėra                          |
+
+### M. Duomenų išvalymas ✅ — `tests/test_reset.py`, E8, UI — `tests/ui/test_main_window.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| M1  | planas su rašomu ir transkribuojamu įrašu            | jie (ir jų tekstai) palikti, kiekiai teisingi             |
+| M2  | tik „įrašai ir tekstai"                              | recordings/, žymės, statistika, backup — ištrinta; vardai, nustatymai lieka |
+| M3  | laukiantys balsai + vardų atpažinimas                | pending, enroll/owner/ignored, legacy — ištrinta; `.next`, assigned, model.json lieka |
+| M4  | nežinoma kategorija / tušti katalogai                | klaida / nelūžta                                          |
+| E8  | įrašas ištrintas laukiant eilėje                     | „PRALEISTA", kodas 0, ASR nekviečiamas                    |
+| UI  | mygtukai toli nuo „Išsaugoti"; atšaukti / patvirtinti | Atšaukti — nieko; patvirtinus — atlikta; numatytai pažymėti tik įrašai |
+
 ### Nustatymų pakeitimų matrica (ar kiekvienas nustatymas tikrai veikia)
 
 | Nustatymas                             | Ką turi pakeisti                    | Testai         |
@@ -451,6 +512,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | teksto laikymas (dienos)               | lango trimingas                     | I2             |
 | VAD min kalba / paddingas              | praleidimas / trim                  | H1–H6          |
 | vardo slenkstis / atsarga              | vardas ↔ `Kolega?` (griežtumas)     | G6, G10        |
+| kolegų garso šalinimas (mikrofone)     | L be R kopijos / kaip anksčiau      | L5             |
 | debug                                  | `debug.log` pildosi                 | `test_debug_doctor.py` |
 
 ### Rankinis GUI checklist (prieš push)

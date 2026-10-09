@@ -70,6 +70,10 @@ SCHEMA = (
             "Kaina: ~3 GB RAM, kol yra darbo; po žemiau nurodyto laiko be darbo modelis iškraunamas."),
     Setting("ASR_SERVER_IDLE_MIN", "int", "Transkripcija", "Iškrauti modelį po (min be darbo)",
             "Kiek minučių be transkripcijų laikyti modelį atmintyje.", 1, 480),
+    Setting("ECHO_CANCEL", "bool", "Transkripcija", "Šalinti kolegų garsą iš mikrofono kanalo",
+            "Ausinės su mikrofonu kompiuterio lizde elektriškai praleidžia dalį ausinių garso į mikrofoną (matuota "
+            "−20…−28 dB) — tada tavo eilutėse atsiranda kolegų žodžių. Prieš transkripciją ta kopija atimama pagal "
+            "tikslų sistemos garso kanalą. Jei nuotėkio nėra — nieko nedaroma."),
     # ── VAD ──
     Setting("VAD_FILTER", "bool", "VAD (kalbos filtras)", "Kalbos filtras prieš transkripciją",
             "Prieš kraunant modelį randama kalba (Silero VAD): įrašai be kalbos praleidžiami (modelis nekraunamas), "

@@ -77,7 +77,8 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   tik kalbos atkarpos su laikų perskaičiavimu (`remap`); numatytai 0 (matavimas — PLAN Etapas 2).
 - ASR moduliai turi `run(argv, get_model)` — modelį paduoda `diktatura.asr.models.load` (atskiras procesas) arba
   nuolatinis serveris (`diktatura.asr.server`, žr. žemiau).
-- `diktatura.asr.transcribe_named` (pagrindinis): `loudnorm` kiekvienam kanalui → VAD → Whisper(Ąžuolas) L ir R →
+- `diktatura.asr.transcribe_named` (pagrindinis): L — **kolegų garso kopijos atėmimas** (`ECHO_CANCEL`,
+  `diktatura.audio.echo`, žr. §3) → `loudnorm` kiekvienam kanalui → VAD → Whisper(Ąžuolas) L ir R →
   kiekvienam R (kolegų) segmentui **balso embedding** (sherpa-onnx) → cosine su `enroll.json` ir tavo balsu
   (`owner.json`); **griežtas sprendimas** (`speakerlib.decide`): vardas tik jei panašumas ≥ `SPEAKER_THRESHOLD` IR
   bent `SPEAKER_MARGIN` didesnis nei antro kandidato — kitaip `Kolega?` (du žinomi balsai per panašūs → ne naujas
@@ -115,8 +116,12 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   vyksta `diktatura.asr.*` arba mp3 konversija = 🟡, kitaip ⚪ (`compute_state` — gryna funkcija). Kol yra nežinomų
   balsų (`speakers/pending/`) — **pulsuoja** (pilna ↔ `*-dim.png` tos pačios spalvos, ~1 s; `icon_name()`).
   Meniu: „⚙ Nustatymai" (viršuje), „🎓 Apmokymai paruošti (N)" (kai yra), „📄 Rodyti nuskaitytą tekstą", būsena,
-  režimas, įrašų aplankas. **Vidurinis klik → Nustatymai.** Ubuntu AppIndicator paspaudus visada atidaro meniu —
-  langas tiesiai neatsidaro, todėl Nustatymai meniu viršuje. Testams `Tray(indicator=…, opener=…)` (be D-Bus ikonos).
+  režimas, įrašų aplankas, „Išeiti" (uždaro tik ikoną — įrašymo servisas veikia toliau; grąžinti: doko
+  „Diktatūra" arba `make tray-on`). **Vidurinis klik → Nustatymai.** Ubuntu AppIndicator paspaudus visada atidaro
+  meniu — langas tiesiai neatsidaro, todėl Nustatymai meniu viršuje. Testams `Tray(indicator=…, opener=…)`.
+- **Programų meniu / dokas:** `make desktop` (`desktop/diktatura.desktop.in` → `~/.local/share/applications/`;
+  įeina į `make install`) → `bin/diktatura-open.sh`: įjungia `diktatura-tray` (jei uždaryta) ir atidaro langą.
+  Langas `GLib.set_prgname("diktatura")` → WM_CLASS sutampa su `StartupWMClass` — dokas jį rodo prie prisegtos ikonos.
 - `diktatura.ui.app`: **vienas langas** „Diktatūra" (Gtk.Application, vienas egzempliorius per D-Bus — antras
   paleidimas `--page <skiltis>` tik perjungia skiltį), skiltys `Gtk.Stack` + „◀ Atgal". `--shot <png>` — nuotrauka.
   - `ui.text_page` (📄 Tekstas): modelis sesija → eilutės; tail'ina `recordings/*.named.txt|*.txt|*.clean.dialog.txt`
@@ -134,7 +139,14 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
     „Ne žmogus" → `store.discard`; registruoti balsai: tavo balsas (pamiršti) + kolegos: pervadinti/sujungti/pamiršti.
     Po pakeitimų perpiešia Teksto skiltį.
   - `ui.settings_page` (⚙ Nustatymai): laukai generuojami iš `config.SCHEMA` (naujas raktas schemoje atsiranda
-    automatiškai), įrašymo režimas per `services`, validacija prie laukų, „Atkurti numatytus".
+    automatiškai), įrašymo režimas per `services`, validacija prie laukų. Apačioje, toli nuo „Išsaugoti" —
+    „Atstatymas ir duomenys": „Atkurti numatytus nustatymus…" (patvirtinimas su pasikeisiančių sąrašu) ir „Ištrinti
+    įrašus ir tekstus…" (`diktatura.reset`: varnelės įrašai+tekstai / laukiantys vardo balsai / vardų atpažinimas;
+    numatytai — tik pirma). Abiejuose dialoguose numatytasis mygtukas — „Atšaukti" (Enter neištrina).
+- `diktatura.reset` (stdlib): ką trinti pagal kategoriją; niekada — nustatymų, modelių, logų, `model.json`,
+  `assigned.json`, DABAR rašomo (`<runtime>/recording`) ir DABAR transkribuojamo / archyvuojamo įrašo (pagal
+  `pgrep` argumentus) — kitaip transkripcija po valymo „atgaivintų" seną tekstą. Eilėje laukę ištrinti įrašai
+  praleidžiami (`transcribe-file.sh`: „PRALEISTA").
 - `ui.gtk`: GTK versijos ir bendras CSS vienoje vietoje. UI moduliuose — jokio numpy/faster-whisper.
 
 ### Valdymas / konfigūracija
@@ -180,6 +192,17 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   R kanale paprastai nėra, dubliuotos „Tu" eilutės = nutekėjimas → šalinamos. **Išimtis** — prisijungęs prie to paties
   skambučio telefonu: tavo balsas ateina ir per R. Tada R eilutė žymima „Tu" (jei tavo balsas žinomas), o L kopija
   išmetama kaip dublis.
+- **Aidas tavo kanale = ausinių lizdo persiklojimas, ne ausinės ir ne tvarkyklė (2026-10-09).** „Tu" eilutėse buvo
+  kolegų žodžių. Matuota (HP EliteBook 850 G8, Realtek ALC285, laidinės ausinės su mikrofonu): L kanale — tiesinė R
+  kopija −20…−28 dB, koherencija iki 0.9, dažnių atsakas plokščias 100 Hz–1.6 kHz (akustinis iš ausinių būtų „spalvotas"),
+  proporcinga garsumui (kontroliuotas testas 52 % garsumu: −44 dB). ALSA/PulseAudio loopback'o nėra — kita tvarkyklė
+  nepadėtų. Sprendimas — `diktatura.audio.echo`: kiekvienam įrašui poslinkis (kryžminė koreliacija) ir pastovus kelias
+  H(f) (du etapai: antrame — tik kadrai, kur L ≈ nuotėkis), L' = L − h * R; prieš loudnorm (jis dinamiškai keičia
+  stiprinimą ir tiesinį ryšį sugadintų). Rezultatas WAV įraše: L lygis kolegoms kalbant −49.5 → −66 dB (= triukšmo
+  lygis), gaubtinių koreliacija su R 0.86 → 0.15, Whisper L kanale 22 segmentai radijo → 0, tavo žodžiai 94 % → 94 %.
+  Kintantis (akustinis) kelias nuslopinamas tik iki triukšmo lygio — keli segmentai dar atpažįstami (PLAN Etapas 8).
+  Kita išeitis — vidinis mikrofonų masyvas (DMIC) ar USB ausinės.
+  Atmesta: ffmpeg `-probesize/-analyzeduration` kanalų poslinkiui (0.75 → 0.5 s, ne 0).
 - **Griežti vardai (2026-10-09)** — klaidingas vardas blogiau už „Kolega?". Anksčiau: geriausias panašumas ≥ 0.5 →
   vardas, net jei antras kandidatas beveik toks pat, o tavo balso R kanale nebuvo su kuo palyginti (prisijungus
   telefonu tavo eilutė gavo kolegos vardą). Dabar: slenkstis + atsarga iki antro + tavo balsas kaip kandidatas;
@@ -229,6 +252,9 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
 - **Nežinomi balsai — be „grandinės":** naujas segmentas lyginamas tik su pirmu nezN pavyzdžiu. Bandyta kaupti
   variantus (mažiau skaldymo) — 2 dienų tekstuose ~9 balsai susiliejo į 2 (A~A', A'~B…). Suskaidytą žmogų sujungti
   lengva (tas pats vardas Apmokymuose), suliejimo — ne.
+- **L ir R įraše pasislinkę ~0.5–1 s** (ffmpeg du `-f pulse` įėjimai + `join`: mikrofonas pradedamas skaityti
+  anksčiau; poslinkis pastovus per vieną VOX paleidimą, bet kinta tarp paleidimų). Kanalų laikų nelyginti tiesiogiai:
+  de-dup turi 2 s atsargą, aido šalinimas poslinkį skaičiuoja pats.
 - **`pending/.next` po `flock`:** nežinomus balsus vienu metu gali kurti transkripcija ir `make speakers-relabel`.
 - **Testų LT fixture'ai — vienas kalbėtojas** (Common Voice klipai) — „skirtingų žmonių" testams netinka.
 - **GTK laikmačiai po lango uždarymo:** `GLib.timeout_add` gyvena ilgiau už langą — sunaikintų valdiklių lietimas =

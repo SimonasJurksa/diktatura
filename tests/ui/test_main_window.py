@@ -218,6 +218,7 @@ def test_i6_tray_states_menu_and_pulse(env, gtk):
                   pending_fn=lambda: st["pending"], timers=False)
     labels = [it.get_label() for it in ind.menu.get_children() if hasattr(it, "get_label") and it.get_label()]
     assert labels[0] == "⚙ Nustatymai"                                # Nustatymai — meniu viršuje
+    assert labels[-1] == "Išeiti"                                      # paprastai, ne „Išeiti iš ikonos"
     assert ind.secondary is t.it_settings                              # vidurinis klik -> Nustatymai
     assert not t.it_training.get_visible()
     for _ in range(4):
@@ -291,3 +292,89 @@ def test_i4_asr_server_toggle_controls_service(env, win, gtk, fake_systemd):
     st.set_value("THREADS", 4)                                           # kitas nustatymas — serverio neliečia
     calls = len(fake_systemd.calls())
     assert st.save() and not [c for c in fake_systemd.calls()[calls:] if "diktatura-asr" in c]
+
+
+# ── Atstatymas ir duomenys (toli nuo „Išsaugoti", su patvirtinimu) ──
+def labels_in(widget, kind="button"):
+    from diktatura.ui.gtk import Gtk
+    out = []
+    if kind == "button" and isinstance(widget, Gtk.Button):
+        out.append(widget.get_label())
+    elif kind == "text" and isinstance(widget, Gtk.Label):
+        out.append(widget.get_text())
+    if isinstance(widget, Gtk.Container) and not (kind == "button" and isinstance(widget, Gtk.Button)):
+        for c in widget.get_children():
+            out += labels_in(c, kind)
+    return out
+
+
+def answer(st, response, toggle=None):
+    """run_dialog pakaitalas: įsimena dialogą, (pa)žymi varneles, grąžina atsakymą."""
+    seen = {}
+
+    def run(dlg):
+        seen["dlg"] = dlg
+        seen["buttons"] = [b.get_label() for b in dlg.get_action_area().get_children()]
+        seen["text"] = " ".join(labels_in(dlg.get_message_area(), "text"))
+        for cat, on in (toggle or {}).items():
+            st._checks_seen[cat].set_active(on)
+        return response
+    st.run_dialog = run
+    return seen
+
+
+def test_i4_reset_buttons_far_from_save(win):
+    st = win.settings
+    bar = st.btn_save.get_parent()
+    assert labels_in(bar) == ["Išsaugoti"]                                           # apačios juostoje tik „Išsaugoti"
+    assert st.btn_defaults.get_parent() is st.btn_wipe.get_parent() is not bar     # atskirame rėmelyje, slinkties srityje
+    assert st.btn_defaults.get_ancestor(type(st.sw)) is st.sw
+
+
+def test_i4_defaults_need_confirmation(env, win, gtk):
+    from diktatura import config
+    from diktatura.ui.gtk import Gtk
+    st = win.settings
+    assert not st.on_reset_clicked() and "jau numatytieji" in st.msg.get_text()     # nėra ką keisti — be dialogo
+    config.save({"VOX_SILENCE_SEC": "9"})
+    st.load()
+    seen = answer(st, Gtk.ResponseType.CANCEL)
+    assert not st.on_reset_clicked()
+    assert seen["buttons"] == ["Atšaukti", "Atkurti"] and "Tylos sekundės" in seen["text"]
+    assert config.load()["VOX_SILENCE_SEC"] == 9 and "Atšaukta" in st.msg.get_text()
+    answer(st, Gtk.ResponseType.DELETE_EVENT)                                        # uždarytas langelis = atšaukta
+    assert not st.on_reset_clicked() and config.load()["VOX_SILENCE_SEC"] == 9
+    answer(st, Gtk.ResponseType.OK)
+    assert st.on_reset_clicked() and config.load()["VOX_SILENCE_SEC"] == 5
+
+
+def test_i4_wipe_dialog_defaults_and_keeps_names(env, win, gtk, monkeypatch):
+    """„Ištrinti įrašus ir tekstus": numatytai pažymėti tik įrašai ir tekstai — vardų atpažinimas lieka."""
+    import json
+    from diktatura import reset
+    from diktatura.speakers import store
+    from diktatura.ui.gtk import Gtk
+    monkeypatch.setattr(reset, "running_transcriptions", lambda: [])
+    write(env, f"vox_{stamp()}.named.txt", "[0:00:01] Ona: labas\n")
+    (env.recordings / f"vox_{stamp()}.mp3").write_bytes(b"x")
+    (env.speakers / "enroll.json").write_text(json.dumps({"Ona": [[1.0, 0.0]]}))
+    win.text.refresh()
+    assert "Ona: labas" in win.text.text()
+    st = win.settings
+    orig = st.wipe_dialog
+
+    def spy():
+        dlg, checks = orig()
+        st._checks_seen = checks
+        return dlg, checks
+    st.wipe_dialog = spy
+    seen = answer(st, Gtk.ResponseType.CANCEL)
+    assert not st.on_wipe_clicked() and len(list(env.recordings.iterdir())) == 2
+    assert seen["buttons"] == ["Atšaukti", "Ištrinti"]
+    assert [c.get_active() for c in st._checks_seen.values()] == [True, False, False]
+    answer(st, Gtk.ResponseType.OK)
+    assert st.on_wipe_clicked()
+    assert not list(env.recordings.iterdir()) and store.counts() == {"Ona": 1}
+    assert "Ona: labas" not in win.text.text() and "Ištrinta" in st.msg.get_text()
+    answer(st, Gtk.ResponseType.OK, toggle={reset.RECORDINGS: False})               # nieko nepažymėta
+    assert not st.on_wipe_clicked() and store.counts() == {"Ona": 1}
