@@ -46,7 +46,10 @@ def main():
             raise SystemExit(f"Nėra pending: {args.from_pending} (yra: {[p.id for p in store.list_pending()]})")
         except ValueError as e:
             raise SystemExit(str(e))
-        print(f"✓ Užregistruota: {args.name}  (viso pavyzdžių: {store.counts()[store.clean_name(args.name)]})")
+        if store.is_me(args.name):
+            print(f"✓ Tavo balsas (pavyzdžių: {store.owner_count()})")
+        else:
+            print(f"✓ Užregistruota: {args.name}  (viso pavyzdžių: {store.counts()[store.clean_name(args.name)]})")
         print(f"   pending {args.from_pending} pašalintas; tekstuose pakeista eilučių: {n}")
         print(f"   Registruoti vardai: {store.names()}")
         return
@@ -63,7 +66,11 @@ def main():
     else:
         raise SystemExit("Nurodyk --wav, --from-pending ARBA --from-cluster + --speaker")
 
-    n = store.add_embedding(args.name, emb.tolist())
+    try:
+        store.claim_model()
+    except RuntimeError as e:
+        raise SystemExit(str(e))
+    n = store.add_owner(emb.tolist(), "enroll") if store.is_me(args.name) else store.add_embedding(args.name, emb.tolist())
     print(f"✓ Užregistruota: {store.clean_name(args.name)}  (viso pavyzdžių: {n})")
     print(f"   Registruoti vardai: {store.names()}")
 

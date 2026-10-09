@@ -24,7 +24,7 @@ make doctor          # ar viskas vietoje
 | `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py` | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
 | `diktatura/audio/` | `vox.py` (VOX daemon'as, `VoxGate` — gryna logika), `prefilter.py` (Silero VAD) |
 | `diktatura/asr/` | `transcribe.py` (mono), `transcribe_named.py` (stereo + vardai), `dialog.py` (de-dup), `server.py`/`client.py` (nuolat įkrautas modelis) |
-| `diktatura/speakers/` | `store.py` (balsų saugykla, stdlib), `speakerlib.py` (embedding'ai, vardų priskyrimas), įrankiai |
+| `diktatura/speakers/` | `store.py` (balsų saugykla, stdlib), `speakerlib.py` (embedding'ai, griežtas vardų priskyrimas), `teach.py` (mokymasis iš pataisymo), `migrate.py` / `relabel.py` (balso modelio keitimas), įrankiai |
 | `diktatura/ui/` | GTK (sistemos `python3`): `app.py` (langas), `text_page.py`, `training_page.py`, `settings_page.py`, `tray.py` |
 | `bin/` | shell įėjimai (`common.sh` — keliai/nustatymai bash'ui; laikyti sinchronizuotą su `paths.py`) |
 | `systemd/*.in` | servisų šablonai (`@REPO@` → `make install-units`) |
@@ -34,13 +34,15 @@ Taisyklės:
 - **Du interpretatoriai:** `.venv` (daemon'ai, ASR) ir sistemos `python3` (GTK). UI moduliuose — jokio numpy/faster-whisper.
 - Keliai — tik per `diktatura/paths.py` / `bin/common.sh` (abu perrašomi `DIKTATURA_DATA/CONFIG_DIR/STATE/RUN`).
 - Naujas nustatymas: `config/diktatura.conf.default` + `SCHEMA` (`diktatura/config.py`) — Nustatymų langas jį parodys pats.
+- Keičiant balso modelį: `tools/fetch_models.sh` (URL + SHA-256) ir `store.EMB_MODEL` — senų balsų saugykla taps
+  nesuderinama (vardai nerašomi), kol vartotojas paleis `make speakers-migrate APPLY=1`.
 - Paleidimas — tik kaip modulio: `PYTHONPATH=<repo> python -m diktatura.…`.
 
 ## 3. Testai
 
 ```bash
-make test            # greiti (~1 min): nustatymai, VOX, Slack, eilė, VAD, kalbėtojai, ASR serveris, UI, doctor, privatumas
-make test-full       # + tikras Ąžuolas su LT garsu (WER ≤ 25 %), ASR serveris su tikru modeliu
+make test            # greiti (~1.5 min): nustatymai, VOX, Slack, eilė, VAD, kalbėtojai, ASR serveris, UI, doctor, privatumas
+make test-full       # + tikras Ąžuolas su LT garsu (WER ≤ 25 %), ASR serveris, tikras balso modelis
 make test-e2e        # tikras VOX + ffmpeg per virtualius PulseAudio įrenginius (tavo garso nekeičia)
 make test-privacy    # privatumo sargas
 make test T="-k vox" # pytest argumentai

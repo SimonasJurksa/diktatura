@@ -115,7 +115,7 @@ def test_doctor_models_missing_and_corrupt(env):
     res = doctor.check_models(cfg)
     assert statuses(res) == ["fail", "fail", "fail"] and "make model-convert" in res[0].fix
     assert doctor.check_models({**cfg, "MODEL": "medium"})[0].status == "warn"
-    emb = env.data / "models" / "diarization" / "embedding_campplus_en.onnx"
+    emb = env.data / "models" / "diarization" / "embedding_campplus_zh_en.onnx"
     emb.parent.mkdir(parents=True)
     emb.write_bytes(b"sugadintas")
     assert "SHA-256" in doctor.check_models(cfg)[1].title

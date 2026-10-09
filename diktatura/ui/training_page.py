@@ -1,10 +1,12 @@
 """Diktatūra — 🎓 Apmokymai: nežinomų balsų vardai (pagrindinio lango skiltis).
 
 Kai pokalbyje kalba neatpažintas balsas, transkripcija jį pažymi „Kolega?nezN" ir išsaugo balso pavyzdį
-(<duomenys>/speakers/pending). Čia: paklausyti (▶), pamatyti, ką ir kada sakė (kontekstas iš transkripcijų),
-įrašyti vardą (automatinis užbaigimas iš esamų) -> balsas registruojamas, pending pašalinamas, VISOSE
-transkripcijose „Kolega?nezN" -> vardas, pereinama prie kito. „Ne žmogus / triukšmas" -> pavyzdys ištrinamas ir
-panašus garsas nebesiūlomas. Apačioje — registruoti balsai: pervadinti / sujungti (pvz. „Ruta" -> „Rūta") / pamiršti.
+(<duomenys>/speakers/pending). Sąrašas — dažniausiai kalbėję viršuje. Čia: paklausyti (▶), pamatyti, ką ir kada
+sakė (kontekstas iš transkripcijų), įrašyti vardą (užbaigimas iš registruotų ir tekstuose matomų) -> balsas
+registruojamas, pending pašalinamas, VISOSE transkripcijose „Kolega?nezN" -> vardas, pereinama prie kito.
+„Ne žmogus / triukšmas" -> pavyzdys ištrinamas ir panašus garsas nebesiūlomas. „🙋 Tai aš" (arba vardas „Tu") -> tai TAVO balsas (pvz. kalbėjai prisijungęs telefonu):
+pavyzdys į owner.json, tekstuose -> „Tu". Apačioje — registruoti balsai: tavo balsas (pamiršti) ir kolegos:
+pervadinti / sujungti (pvz. „Ruta" -> „Rūta") / pamiršti.
 
 Duomenų logika — diktatura.speakers.store (tik stdlib). Grojimas — `paplay` (testams DIKTATURA_PLAYER); kol groja,
 VOX neįrašinėja (diktatura.pause), kad perklausa nevirstų nauju „pokalbiu".
@@ -22,7 +24,8 @@ INTRO = ("Kai pokalbyje kalba žmogus, kurio balso Diktatūra dar nežino, tekst
          "<b>„Kolega?nezN“</b>, o jo balso pavyzdys išsaugomas čia. Paklausyk, perskaityk, ką jis sakė, ir įrašyk "
          "vardą — nuo šiol šis balsas bus atpažįstamas automatiškai, o jau esamuose tekstuose „Kolega?nezN“ "
          "pasikeis į vardą. Jei tai ne žmogus (triukšmas, muzika, pyptelėjimas) — spausk „Ne žmogus“: panašus garsas "
-         "nebebus siūlomas. Balsų „pirštų atspaudai“ saugomi tik tavo kompiuteryje.")
+         "nebebus siūlomas. Jei tai tu pats (pvz. kalbėjai prisijungęs telefonu) — „🙋 Tai aš“. "
+         "Balsų „pirštų atspaudai“ saugomi tik tavo kompiuteryje.")
 MAX_CONTEXT = 60
 POLL_SEC = 3
 
@@ -120,6 +123,8 @@ class TrainingPage(Gtk.Box):
         arow.pack_start(button("◀ Ankstesnis", lambda: self.move(-1)), False, False, 0)
         arow.pack_start(button("Kitas ▶", lambda: self.move(1)), False, False, 0)
         arow.pack_start(button("⏭ Praleisti", self.skip, "Palikti vėlesniam laikui — nieko nekeičia"), False, False, 0)
+        arow.pack_start(button("🙋 Tai aš", self.its_me,
+                               "Tai TAVO balsas (pvz. kalbėjai prisijungęs telefonu): tekstuose bus „Tu“"), False, False, 0)
         arow.pack_start(button("🗑 Ne žmogus / triukšmas", self.not_human,
                                "Ištrinti pavyzdį; panašus garsas nebebus siūlomas"), False, False, 0)
         arow.pack_end(button("📄 Grįžti į tekstą", lambda: self.win and self.win.show_page("text")), False, False, 0)
@@ -148,10 +153,12 @@ class TrainingPage(Gtk.Box):
     # ── duomenys ──
     def reload(self, keep_index=None) -> None:
         sel_id = self.cur.id if self.cur else None
-        self.voices = store.list_pending()
+        pend = store.list_pending()
         for r in self.list.get_children():
             self.list.remove(r)
-        occ_all = store.occurrences_many([v.label for v in self.voices])
+        occ_all = store.occurrences_many([v.label for v in pend])
+        # dažniausiai kalbėję — viršuje (juos įvardinus pasitaiso daugiausia teksto)
+        self.voices = sorted(pend, key=lambda v: -len(occ_all[v.label]))
         for v in self.voices:
             occ = occ_all[v.label]
             row = Gtk.ListBoxRow()
@@ -168,9 +175,7 @@ class TrainingPage(Gtk.Box):
             self.list.add(row)
         self.list.show_all()
         self.lbl_count.set_text(f"Laukia vardo: {len(self.voices)}")
-        self.names_model.clear()
-        for n in store.names():
-            self.names_model.append([n])
+        self._fill_names()
         self._reload_known()
         if not self.voices:
             self.cur = None
@@ -181,8 +186,14 @@ class TrainingPage(Gtk.Box):
             idx = min(keep_index or 0, len(self.voices) - 1)
         self.list.select_row(self.list.get_row_at_index(idx))
 
+    def _fill_names(self) -> None:
+        """Vardų užbaigimas: registruoti + matomi tekstuose (pvz. po balso modelio keitimo — seni vardai)."""
+        self.names_model.clear()
+        for n in sorted(set(store.names()) | store.text_speakers(), key=str.casefold):
+            self.names_model.append([n])
+
     def _tick(self):
-        if [v.id for v in store.list_pending()] != [v.id for v in self.voices]:
+        if {v.id for v in store.list_pending()} != {v.id for v in self.voices}:
             self.reload()
         return True
 
@@ -235,7 +246,21 @@ class TrainingPage(Gtk.Box):
         for r in self.known.get_children():
             self.known.remove(r)
         counts = store.counts()
-        self.exp.set_label(f"Registruoti balsai ({len(counts)}) — pervadinti, sujungti, pamiršti")
+        self.exp.set_label(f"Registruoti balsai ({len(counts)}) — pervadinti, sujungti, pamiršti"
+                           + ("" if store.compatible() else
+                              "  ⚠ senas balso modelis — neatpažįstami; paleisk: make speakers-migrate"))
+        own = store.owner_count()
+        row = Gtk.Box(spacing=8)
+        for m in ("top", "bottom", "start", "end"):
+            getattr(row, f"set_margin_{m}")(4)
+        row.pack_start(label(f"<b>🙋 {store.ME}</b> (tavo balsas)", markup=True), False, False, 0)
+        row.pack_start(label(f"pavyzdžių: {own}" if own else
+                             "dar nežinomas — Tekste ant savo eilutės: ✎ Kas kalbėjo? → Tu", css="dk-help"),
+                       False, False, 0)
+        if own:
+            row.pack_end(button("🗑 Pamiršti", self._confirm_forget_me), False, False, 0)
+        row.speaker = store.ME
+        self.known.add(row)
         for name in sorted(counts, key=str.casefold):
             row = Gtk.Box(spacing=8)
             for m in ("top", "bottom", "start", "end"):
@@ -267,6 +292,8 @@ class TrainingPage(Gtk.Box):
         if not self.cur:
             return False
         name = self.entry.get_text()
+        if store.is_me(name):
+            return self.its_me()
         try:
             clean = store.clean_name(name)
             idx = self.voices.index(self.cur)
@@ -289,6 +316,17 @@ class TrainingPage(Gtk.Box):
         n = store.discard(pid)
         self._after_change(idx)
         self.set_msg(f"✓ {pid} pašalintas kaip triukšmas (tekstuose -> „{store.UNKNOWN}“: {n} eil.)", "dk-ok")
+        return True
+
+    def its_me(self) -> bool:
+        if not self.cur:
+            return False
+        idx, pid = self.voices.index(self.cur), self.cur.id
+        self.stop()
+        n = store.assign_owner(pid)
+        self._after_change(idx)
+        self.set_msg(f"✓ {pid} — tavo balsas (tekstuose -> „{store.ME}“: {n} eil.). Kolegų kanale tave atpažins.",
+                     "dk-ok")
         return True
 
     def skip(self) -> None:
@@ -344,10 +382,21 @@ class TrainingPage(Gtk.Box):
     def forget(self, name: str) -> None:
         store.delete_speaker(name)
         self._reload_known()
-        self.names_model.clear()
-        for n in store.names():
-            self.names_model.append([n])
+        self._fill_names()
         self.set_msg(f"✓ „{name}“ balsas pamirštas (tekstai nekeisti)", "dk-ok")
+
+    def forget_me(self) -> None:
+        store.clear_owner()
+        self._reload_known()
+        self.set_msg("✓ Tavo balso pavyzdžiai pamiršti (tekstai nekeisti)", "dk-ok")
+
+    def _confirm_forget_me(self) -> None:
+        dlg = self._dialog("Pamiršti tavo balsą?", "Kolegų kanale tavo balsas nebebus atpažįstamas kaip „Tu“ "
+                                                   "(tekstai nesikeis).", Gtk.ButtonsType.YES_NO)
+        resp = dlg.run()
+        dlg.destroy()
+        if resp == Gtk.ResponseType.YES:
+            self.forget_me()
 
     def _dialog(self, text, secondary, buttons=Gtk.ButtonsType.OK_CANCEL):
         return Gtk.MessageDialog(transient_for=self.get_toplevel() if self.win else None, modal=True,

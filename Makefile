@@ -164,6 +164,10 @@ assign: ## Priskirti nežinomą balsą vardui:  make assign ID=nez3 NAME=Jonas
 enroll: ## Registruoti balsą iš švaraus įrašo:  make enroll NAME=Vardas WAV=/kelias.wav (16 kHz mono)
 	@test -n "$(NAME)" -a -n "$(WAV)" || { echo "Nurodyk NAME=... WAV=..."; exit 1; }; \
 	 $(RUN) diktatura.speakers.enroll --name "$(NAME)" --wav "$(WAV)"
+speakers-migrate: ## Pereiti prie naujo balso modelio (seni balsai -> archyvas):  make speakers-migrate [APPLY=1]
+	@$(RUN) diktatura.speakers.migrate $(if $(APPLY),--apply)
+speakers-relabel: ## Perskaičiuoti kalbėtojus paskut. dienų tekstuose:  make speakers-relabel [DAYS=2] [APPLY=1]
+	@$(RUN) diktatura.speakers.relabel --days $(or $(DAYS),2) $(if $(APPLY),--apply)
 
 ## ——— Diegimas ———
 deps: ## Įdiegti sistemos paketus (sudo apt): ffmpeg (+ffplay), pactl/paplay, notify-send, GTK/AppIndicator, broadwayd

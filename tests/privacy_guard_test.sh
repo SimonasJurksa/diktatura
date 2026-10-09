@@ -35,6 +35,7 @@ printf 'ID3' > a.mp3;                                    attempt blocked "garso 
 mkdir -p recordings && echo "[0:00] Tu: x" > recordings/x.named.txt
                                                          attempt blocked "transkripcija recordings/*.named.txt" recordings/x.named.txt
 mkdir -p speakers && echo '{}' > speakers/enroll.json;   attempt blocked "balsų biometrija speakers/enroll.json" speakers/enroll.json
+mkdir -p speakers && echo '[]' > speakers/owner.json;    attempt blocked "tavo balso biometrija speakers/owner.json" speakers/owner.json
 echo '{}' > annotations.json;                            attempt blocked "žymės su teksto ištraukomis annotations.json" annotations.json
 echo '[]' > ignored.json;                                attempt blocked "triukšmo embedding'ai ignored.json" ignored.json
 mkdir -p models && printf 'x' > models/m.onnx;           attempt blocked "modelis models/*.onnx" models/m.onnx
@@ -87,9 +88,9 @@ bad_ign=0
 for p in recordings/x.wav recordings/a.named.txt recordings/a.mp3 speakers/enroll.json speakers/pending/n.wav \
          models/a/model.bin models/hf/blob STATUS.md CLAUDE.md .private-terms config/diktatura.conf logs/a.log \
          x.diar.json tests/fixtures/private/me.wav diktatura/speakers/enroll.json diktatura/speakers/pending/n.wav \
-         annotations.json assigned.json ignored.json tests/fixtures/cv/a.mp3; do
+         annotations.json assigned.json ignored.json owner.json tests/fixtures/cv/a.mp3; do
   git check-ignore -q --no-index "$p" || { ko ".gitignore NEignoruoja: $p"; bad_ign=1; }
-done; [ $bad_ign -eq 0 ] && ok ".gitignore ignoruoja visus privačius kelius (20)"
+done; [ $bad_ign -eq 0 ] && ok ".gitignore ignoruoja visus privačius kelius (21)"
 bad_ign=0
 for p in README.md Makefile docs/PLAN.md .githooks/privacy-scan.sh tests/privacy_guard_test.sh \
          diktatura/speakers/__init__.py diktatura/speakers/speakerlib.py diktatura/paths.py; do

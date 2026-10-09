@@ -1,4 +1,4 @@
-"""E5–E6 [full]: tikras Ąžuolas su lietuviška kalba (Common Voice CC0 klipai, make fixtures).
+"""E5–E8 [full]: tikras Ąžuolas ir balso modelis su lietuviška kalba (Common Voice CC0 klipai, make fixtures).
 
 Lėti (~1–2 min kiekvienas: modelio krovimas + transkripcija). Laukia tikro transkripcijos užrakto.
 """
@@ -88,3 +88,37 @@ def test_asr_server_keeps_model_loaded(env, real_models, clips):
     finally:
         p.terminate()
         p.wait(timeout=20)
+
+
+def test_e7_real_voice_model_consistent_for_same_speaker(env, real_models, clips):
+    """Tikras balso modelis (paths.EMB_MODEL_FILE): visi fixture'ų klipai — vienas kalbėtojas, tad tarpusavyje panašūs.
+    (Buvęs CAM++ VoxCeleb tiems patiems klipams duodavo 0.18–0.94 — todėl ir maišė žmones; naujas — 0.79–0.92.)"""
+    from diktatura.speakers import speakerlib as sl
+    E = [sl.compute_embedding(lt.decode(f)) for f, _ in clips]
+    sims = [sl.cosine(a, b) for i, a in enumerate(E) for b in E[i + 1:]]
+    print("panašumai:", [round(x, 2) for x in sims])
+    assert min(sims) >= 0.7
+
+
+def test_e8_owner_voice_on_right_channel_is_tu(env, real_models, clips):
+    """Prisijungęs telefonu: tavo balsas dešiniame kanale -> „Tu" (ne kolegos vardas, ne nežinomas)."""
+    from diktatura.speakers import speakerlib as sl
+    from diktatura.speakers import store
+    me_f, me_t = clips[0]
+    me = lt.decode(me_f)
+    n = len(me) + 16000 * 3
+    left, right = np.zeros(n, np.float32), np.zeros(n, np.float32)
+    right[16000:16000 + len(me)] = me                                   # tu — tik per „telefoną" (R)
+    store.add_owner(sl.compute_embedding(me).tolist(), "test")
+    store.mark_model()
+    jonas = np.random.default_rng(7).normal(size=len(sl.load_owner()[0])).astype(np.float32)   # kitas „balsas"
+    sl.save_enroll({"Jonas": [jonas / np.linalg.norm(jonas)]})
+    wav = env.recordings / "vox_20260101_110000.wav"
+    audio.write_wav(wav, left, right)
+    r = subprocess.run([sys.executable, "-m", "diktatura.asr.transcribe_named", str(wav),
+                        "--model", "azuolas-ct2", "--threads", THREADS], capture_output=True, text=True, timeout=900)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    who = [ln.split("] ", 1)[1].split(":", 1)[0] for ln in
+           wav.with_suffix(".named.txt").read_text(encoding="utf-8").splitlines()]
+    assert who and set(who) == {"Tu"}, who
+    assert not list(env.pending.glob("nez*.wav"))

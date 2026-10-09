@@ -2,7 +2,9 @@
 """Diktatūra — STEREO pokalbio transkripcija su VARDAIS (pagrindinis pipeline).
 
 L (mic) = „Tu"; R (monitor) = kolegos. Kiekvienam kolegų segmentui paskaičiuojamas
-balso embedding ir priskiriamas vardas iš registro (<duomenys>/speakers/enroll.json) pagal cosine.
+balso embedding ir priskiriamas vardas iš registro (<duomenys>/speakers/enroll.json) pagal cosine — griežtai:
+slenkstis + atsarga iki antro kandidato (abejotinas -> „Kolega?"). Jei žinomas TAVO balsas (owner.json) ir jis
+skamba kolegų kanale (prisijungęs telefonu), eilutė žymima „Tu".
 Nežinomas balsas -> „Kolega?nezN" (pavyzdys išsaugomas į pending; vardą priskiria Apmokymai).
 Klasterizavimo inference metu NEREIKIA — tiesioginis embedding ↔ registras sutapimas.
 
@@ -10,7 +12,8 @@ Pipeline: loudnorm/kanalui -> VAD (be kalbos -> modelis nekraunamas; apkarpymas)
 originalą -> R segmentams vardai -> de-dup (Tu vs kolegos) -> dialogas.
 
 Naudojimas:
-    python -m diktatura.asr.transcribe_named <stereo.wav> [--model azuolas-ct2] [--threads 6] [--name-threshold 0.5]
+    python -m diktatura.asr.transcribe_named <stereo.wav> [--model azuolas-ct2] [--threads 6]
+        [--name-threshold 0.5] [--name-margin 0.1]   (numatytai — SPEAKER_THRESHOLD / SPEAKER_MARGIN nustatymai)
 """
 import argparse
 import os
@@ -23,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from diktatura import debug, paths
+from diktatura import config, debug, paths
 from diktatura.asr import dialog, models
 from diktatura.audio import prefilter
 from diktatura.speakers import speakerlib as sl
@@ -59,6 +62,27 @@ def transcribe_plan(model, plan, args):
     return out
 
 
+def name_colleagues(them, them_audio, src, me_label="Tu", threshold=None, margin=None, embed=None):
+    """Kolegų (R) segmentams vardai -> ([(start, end, kas, tekstas)], naujų nežinomų sk.).
+    Slenkstis / atsarga — SPEAKER_THRESHOLD / SPEAKER_MARGIN (jei nenurodyta). Saugykla senu modeliu -> vardai
+    nerašomi (seno modelio vektoriai su naujais nesulyginami: geriau „Kolega?" nei atsitiktiniai vardai)."""
+    if not store.compatible():
+        print(f"⚠ Balsai užregistruoti senu modeliu ({store.model_id()}) — vardai nerašomi. "
+              "Paleisk: make speakers-migrate")
+        debug.log("speakers", f"{src}: balsų saugykla nesuderinama ({store.model_id()}) — vardai praleisti")
+        return [(s0, s1, store.UNKNOWN, tx) for s0, s1, tx in them], 0
+    cfg = config.load()
+    thr = float(cfg["SPEAKER_THRESHOLD"]) if threshold is None else threshold
+    margin = float(cfg["SPEAKER_MARGIN"]) if margin is None else margin
+    owner = sl.load_owner()
+    print(f"  slenkstis {thr:g}, atsarga {margin:g}, registruota {len(store.counts())}, "
+          f"tavo balso pavyzdžių {len(owner)}")
+    return sl.label_segments(
+        them, them_audio, store=sl.load_enroll(), pending=sl.load_pending(), ignored=sl.load_ignored(),
+        threshold=thr, embed=embed or sl.compute_embedding, add_pending_fn=sl.add_pending,
+        src=src, margin=margin, owner=owner, me_label=me_label)
+
+
 def run(argv=None, get_model=models.load) -> int:
     """Transkribuoti stereo pokalbį. get_model(vardas, compute, gijos) — modelio šaltinis (serveris paduoda įkrautą)."""
     ap = argparse.ArgumentParser(prog="diktatura.asr.transcribe_named")
@@ -69,7 +93,8 @@ def run(argv=None, get_model=models.load) -> int:
     ap.add_argument("--compute", default="int8")
     ap.add_argument("--beam", type=int, default=5)
     ap.add_argument("--me", default="Tu")
-    ap.add_argument("--name-threshold", type=float, default=0.5)
+    ap.add_argument("--name-threshold", type=float, help="numatytai SPEAKER_THRESHOLD")
+    ap.add_argument("--name-margin", type=float, help="numatytai SPEAKER_MARGIN")
     ap.add_argument("--vad", choices=("on", "off", "trim"),
                     help="perrašo VAD nustatymus palyginimams: off — be VAD; on — vartai; trim — vartai + apkarpymas")
     args = ap.parse_args(argv)
@@ -109,8 +134,7 @@ def run(argv=None, get_model=models.load) -> int:
         out.write_text("", encoding="utf-8")
         return 0
 
-    pending = sl.load_pending()
-    print(f"Registruoti balsai: {store.names() or '(nėra)'}  | nežinomų laukia: {len(pending)}")
+    print(f"Registruoti balsai: {store.names() or '(nėra)'}  | nežinomų laukia: {store.pending_count()}")
     t0 = time.time()
     model = get_model(args.model, args.compute, args.threads)
     t_load = time.time() - t0
@@ -123,12 +147,9 @@ def run(argv=None, get_model=models.load) -> int:
     them = transcribe_plan(model, them_plan, args)
     debug.log("asr", f"{audio.name}: R (kolegos) {len(them)} segm.")
 
-    # Vardai kolegų segmentams per balso embedding (registruoti -> vardas, nauji nežinomi -> pending)
+    # Vardai kolegų segmentams per balso embedding (registruoti -> vardas, tavo balsas -> „Tu", nauji -> pending)
     print("Priskiriu vardus (balso atpažinimas)...")
-    named, new_pending = sl.label_segments(
-        them, them_audio, store=sl.load_enroll(), pending=pending, ignored=sl.load_ignored(),
-        threshold=args.name_threshold, embed=sl.compute_embedding, add_pending_fn=sl.add_pending,
-        src=audio.stem)
+    named, new_pending = name_colleagues(them, them_audio, audio.stem, args.me, args.name_threshold, args.name_margin)
     if new_pending:
         print(f"🔎 Nauji nežinomi balsai: {new_pending} — pavyzdžiai {paths.PENDING} (vardai: Apmokymai)")
 

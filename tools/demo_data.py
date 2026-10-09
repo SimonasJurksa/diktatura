@@ -21,6 +21,7 @@ if not os.environ.get("DIKTATURA_DATA"):
     sys.exit("Nurodyk DIKTATURA_DATA=<laikinas katalogas> — tikrų duomenų neliečiam.")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from diktatura import paths  # noqa: E402
+from diktatura.speakers import store  # noqa: E402
 
 TODAY = datetime.now().replace(microsecond=0)
 SESSIONS = [
@@ -79,6 +80,7 @@ def main():
     rnd = random.Random(1)
     emb = lambda: [rnd.gauss(0, 1) for _ in range(192)]  # noqa: E731
     paths.ENROLL.write_text(json.dumps({"Ona": [emb(), emb()], "Jonas": [emb()]}), encoding="utf-8")
+    store.mark_model()
     first = SESSIONS[0]
     for i, (f0, src) in enumerate(((140, first), (210, SESSIONS[2])), 1):
         fake_voice(paths.PENDING / f"nez{i}.wav", f0, i)

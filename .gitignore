@@ -33,6 +33,7 @@ tests/fixtures/cv/
 *.clusters.json
 *.reclust.json
 enroll.json
+owner.json
 ignored.json
 assigned.json
 # žymės (⭐/✅) su teksto ištraukomis

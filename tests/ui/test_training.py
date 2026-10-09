@@ -150,3 +150,24 @@ def test_playback_pauses_recording_and_releases(win):
     assert info and info["reason"] == "baigta groti" and info["until"] - time.time() <= pause.TAIL_SEC + 0.1
     tp.move(1)                                   # stop() be grojimo — pauzės nekeičia
     assert pause.info()["reason"] == "baigta groti"
+
+
+def known_rows(tp):
+    return [r.get_child().speaker for r in tp.known.get_children()]
+
+
+def test_g7_its_me_button_and_typed_tu(win, demo):
+    """Nežinomas balsas — tai tu (kalbėjai telefonu): „🙋 Tai aš" arba vardas „Tu" -> owner.json, tekstuose „Tu"."""
+    from diktatura.speakers import store
+    tp = win.training
+    assert known_rows(tp)[0] == "Tu" and store.owner_count() == 0
+    assert tp.its_me()
+    assert store.owner_count() == 1 and store.counts() == {"Ona": 1, "Ruta": 1, "Rūta": 1}
+    assert "Tu: kada diegimas?" in win.text.text() and "Kolega?nez1" not in win.text.text()
+    assert tp.cur.id == "nez2" and "tavo balsas" in tp.msg.get_text()
+    tp.entry.set_text(" tu ")
+    assert tp.assign()
+    assert store.owner_count() == 2 and not store.list_pending()
+    assert "Tu: girdžiu" in win.text.text()
+    tp.forget_me()
+    assert store.owner_count() == 0 and known_rows(tp)[0] == "Tu"

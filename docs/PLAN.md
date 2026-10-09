@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅**
 
 ---
 
@@ -249,6 +249,28 @@ Kas padaryta:
 
 ---
 
+## Etapas 7 — Griežti vardai + tikslesnis balso modelis ✅ (2026-10-09)
+
+Savininko pastebėjimas: prisijungus prie skambučio telefonu, jo paties eilutė (dešiniame kanale) gavo kolegos vardą;
+reikia griežčiau ir tiksliau.
+- **Priežastys:** (1) vardas rašytas, jei panašumas ≥ 0.5, net kai antras kandidatas beveik toks pat; (2) tavo balso
+  R kanale nebuvo su kuo palyginti; (3) silpnas modelis — matavimas parodė, kad seno modelio vardai tekstuose beveik
+  atsitiktiniai.
+- **Griežtumas:** `speakerlib.decide` — vardas tik jei ≥ `SPEAKER_THRESHOLD` IR bent `SPEAKER_MARGIN` aukščiau už antrą
+  kandidatą (taip pat ir už tave); kitaip `Kolega?`. Nustatymai → „Kalbėtojai".
+- **Tavo balsas R kanale:** `speakers/owner.json`; atpažintas → `Tu`. Mokomas iš pataisymų: Teksto „✎ Kas kalbėjo?"
+  (`speakers.teach` — eilutės garsas, R kanalas) arba Apmokymų „🙋 Tai aš".
+- **Modelis:** 3D-Speaker CAM++ zh-en „advanced" (EER tavo įrašuose ~0–1 % vs buvusio ~13 %; matavimas —
+  ARCHITECTURE §3). Žymė `speakers/model.json`; `make speakers-migrate` archyvuoja seno modelio balsus,
+  `make speakers-relabel` perskaičiuoja paskutinių dienų tekstų kalbėtojus (nauji balsai → Apmokymai). `make doctor`
+  rodo „Balsai".
+- Testai: `tests/test_speakers.py` (G6–G8), `tests/test_teach.py` (G9), `tests/test_voice_model.py` (G10),
+  UI — `tests/ui/test_training.py`, `tests/ui/test_text_features.py`.
+- Neišspręsta (pastebėta matuojant): ~1/5 „Tu" eilučių pokalbiuose iš tikro yra kolegų balsas (nutekėjimas, kurio
+  de-dup neatpažino, kai Whisper tą patį sakinį parašo skirtingai) — galimas kitas žingsnis: de-dup pagal balsą.
+
+---
+
 ## ❓ Nauji klausimai (su mano rekomendacija)
 
 - ❓ **Q1 — Kur laikyti duomenis po pervadinimo?**
@@ -360,7 +382,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | F2  | tikra „Tu" eilutė                         | lieka      |
 | F3  | trumpa reakcija (< 3 žodžiai)             | lieka      |
 
-### G. Kalbėtojai / apmokymai ✅ — `tests/test_speakers.py`, `tests/ui/test_training.py`
+### G. Kalbėtojai / apmokymai ✅ — `tests/test_speakers.py`, `tests/test_teach.py`, `tests/ui/test_training.py`, `tests/ui/test_text_features.py`
 
 | #   | Atvejis                                                   | Tikimasi                                                               |
 | --- | --------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -369,6 +391,10 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | G3  | tas pats nežinomas balsas keliuose segmentuose / failuose | vienas pending                                                         |
 | G4  | priskirti vardą                                           | enroll papildytas, pending ištrintas, tekstuose `Kolega?nezN` → vardas |
 | G5  | „Ne žmogus"                                               | pending ištrintas, enroll nepakitęs                                    |
+| G6  | griežtumas: slenkstis + atsarga; tavo balsas R kanale     | per panašūs → `Kolega?` (be pending); tavo balsas → `Tu`               |
+| G7  | „🙋 Tai aš" / vardas „Tu"; tavo balso pavyzdžių riba       | `owner.json` (≤ 40), tekstuose → `Tu`; „Tu" nėra kolegos vardas        |
+| G8  | eilutės laikas ir pervadinimas („✎ Kas kalbėjo?")         | tik ta eilutė; pasikeitusi eilutė neperrašoma                          |
+| G9  | mokymasis iš pataisymo (`speakers.teach`)                 | R kanalas jei yra kalbos, kitaip L; < 1.5 s kalbos → nemokoma (kodas 3) |
 
 ### H. VAD pre-filtras [full]
 
@@ -424,6 +450,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | trinti tuščius                         | tuščių likimas                      | E2             |
 | teksto laikymas (dienos)               | lango trimingas                     | I2             |
 | VAD min kalba / paddingas              | praleidimas / trim                  | H1–H6          |
+| vardo slenkstis / atsarga              | vardas ↔ `Kolega?` (griežtumas)     | G6, G10        |
 | debug                                  | `debug.log` pildosi                 | `test_debug_doctor.py` |
 
 ### Rankinis GUI checklist (prieš push)

@@ -49,6 +49,9 @@ nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik
   (whisper-large-v3 + LIEPA-3) per faster-whisper (CT2, int8). Geriausia LT kokybė (testuose WER ~2–3 %).
 - 👥 **Atpažįsta žmones vardais** — stereo (tavo mikrofonas vs sistemos garsas) + balso „pirštų atspaudai"
   (sherpa-onnx, be torch). Tekste: `Tu / Jonas / Petras: …`. Nežinomus balsus išmokai **Apmokymuose**.
+  Griežtai: jei balsas nepakankamai aiškiai panašus į vieną žmogų — `Kolega?`, o ne spėtas vardas. Suklydo? Dešinys
+  klik ant eilutės → **✎ Kas kalbėjo?** — eilutė pataisoma, o balsas išmokstamas (taip pat ir tavo, kai kalbi
+  prisijungęs telefonu).
 - 🔇 **Kalbos filtras** — įrašai be kalbos (kosulys, triukšmas, muzika) atmetami dar prieš kraunant modelį.
 - 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi; paieška (ir regex), filtrai pagal
   kalbėtoją ir laikotarpį (iki viso archyvo), ⭐ žymės ir ☐ užduotys, **▶ grojimas nuo eilutės**,
@@ -104,12 +107,18 @@ make help                 # visos komandos
 ### Kalbėtojų vardai
 
 Patogiausia — **🎓 Apmokymai** lange (ikonos meniu „Apmokymai paruošti (N)" arba `make training`): paklausyk,
-pažiūrėk, ką sakė, įrašyk vardą. Ten pat galima pervadinti ar sujungti registruotus balsus. Komandinėje eilutėje:
+pažiūrėk, ką sakė, įrašyk vardą (jei tai tu pats — „🙋 Tai aš"). Ten pat galima pervadinti ar sujungti registruotus
+balsus. Jei vardas parašytas klaidingai — **📄 Tekstas**, dešinys klik ant eilutės → „✎ Kas kalbėjo?": eilutė
+pataisoma ir balsas išmokstamas. Griežtumas — **⚙ Nustatymai → Kalbėtojai** (slenkstis ir atsarga iki antro
+kandidato). Komandinėje eilutėje:
 
 ```bash
 make name-unknown                 # nežinomi balsai (pavyzdžiai) + komanda paklausyti
-make assign ID=nez3 NAME=Jonas    # priskirti vardą (įsimenamas ateičiai; tekstuose pakeičiamas)
+make assign ID=nez3 NAME=Jonas    # priskirti vardą (įsimenamas ateičiai; tekstuose pakeičiamas; NAME=Tu — tavo balsas)
+make speakers-relabel DAYS=2      # perskaičiuoti kalbėtojus paskutinių dienų tekstuose (APPLY=1 — perrašyti)
 ```
+Atnaujinus iš senesnės versijos (iki 2026-10-09) balso modelis pasikeitė: `make models` ir
+`make speakers-migrate APPLY=1` (seni balsai archyvuojami, vardai išmokstami iš naujo — `make doctor` primins).
 Balsai laikomi lokaliai (`~/.local/share/diktatura/speakers/`, **niekada ne repo**).
 
 ## Architektūra (trumpai)

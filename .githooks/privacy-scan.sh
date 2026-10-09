@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Diktatūra — privatumo sargas (antras saugos sluoksnis po .gitignore).
 #
-# Neleidžia į git įtraukti: garso įrašų, transkripcijų, balsų biometrijos (enroll.json, pending),
+# Neleidžia į git įtraukti: garso įrašų, transkripcijų, balsų biometrijos (enroll.json, owner.json, pending),
 # modelių, logų, lokalaus config, asmeninių darbo dokumentų, per didelių failų ir asmeninių
 # terminų (kolegų vardai, darbovietė, email) — terminai laikomi LOKALIAME .private-terms (gitignore).
 #
@@ -24,7 +24,7 @@ EMPTY_TREE="$(git hash-object -t tree /dev/null)"
 # Draudžiami keliai / plėtiniai (taikoma failo keliui)
 DENY='(^|/)(recordings|speakers|speakers_samples|models|logs)/|(^|/)\.venv/'
 DENY+='|\.(wav|mp3|m4a|flac|ogg|opus|webm|aac|wma)$'
-DENY+='|\.(named|dialog)\.txt$|(^|/)(enroll|ignored|assigned|annotations)\.json$|\.(diar|clusters|reclust)\.json$'
+DENY+='|\.(named|dialog)\.txt$|(^|/)(enroll|owner|ignored|assigned|annotations)\.json$|\.(diar|clusters|reclust)\.json$'
 DENY+='|\.(onnx|bin|ggml|pt|safetensors|ckpt)$|\.log$'
 DENY+='|(^|/)\.private-terms$|(^|/)\.recording$|(^|/)config/diktatura\.conf$'
 DENY+='|^(STATUS|CLAUDE)\.md$'

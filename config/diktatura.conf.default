@@ -45,6 +45,12 @@ VAD_PAD_SEC=0.2
 # 1 = Whisper'iui duoti tik kalbos atkarpas (laikai perskaičiuojami); 0 = visą kanalą (Whisper turi savo VAD)
 VAD_TRIM=0
 
+# ── Kalbėtojai (vardai pagal balsą) ──
+# kiek balsas turi būti panašus į registruotą (0–1), kad būtų parašytas vardas; didesnis = griežčiau
+SPEAKER_THRESHOLD=0.5
+# vardas rašomas tik jei balsas bent tiek panašesnis į tą žmogų nei į kitą (ir į tave); kitaip „Kolega?"
+SPEAKER_MARGIN=0.1
+
 # ── Archyvas ──
 # 1 = tuščią tekstą ir jo garsą iškart ištrinti
 DELETE_EMPTY=1

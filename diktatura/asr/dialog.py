@@ -1,9 +1,10 @@
 """Diktatūra — dialogo surinkimas iš stereo transkripcijos (grynos funkcijos, tik stdlib).
 
 De-dup: ausinių mikrofonas pagauna kolegų garsą (nutekėjimas į kairį kanalą). Kadangi tavo balso
-dešiniame (sistemos) kanale niekada nėra, „Tu" eilutė, kurios dauguma žodžių laike sutampa su kolegų
+dešiniame (sistemos) kanale paprastai nėra, „Tu" eilutė, kurios dauguma žodžių laike sutampa su kolegų
 eilutėmis, yra nutekėjimas ir išmetama. Trumpos reakcijos (< min_words žodžių) visada paliekamos.
-"""
+Išimtis — prisijungęs telefonu: tavo balsas ateina ir per dešinį kanalą; tokia eilutė jau pažymėta „Tu"
+(speakerlib atpažino tavo balsą), tad išmetus L kopiją lieka „Tu"."""
 import datetime as dt
 import re
 

@@ -111,7 +111,7 @@ def check_models(cfg: dict) -> list:
     else:
         out.append(R(WARN, f"nėra Ąžuolo modelio (naudojamas {cfg['MODEL']})", "geriausiai LT kokybei: make model-convert"))
     shas = _expected_shas()
-    for key, rel, what in (("EMB", "embedding_campplus_en.onnx", "balso embedding (vardai)"),
+    for key, rel, what in (("EMB", paths.EMB_MODEL_FILE.name, "balso embedding (vardai)"),
                            ("SEG", "sherpa-onnx-pyannote-segmentation-3-0/model.onnx", "segmentacija")):
         f = paths.DIARIZATION_MODELS / rel
         if not f.exists():
@@ -120,6 +120,20 @@ def check_models(cfg: dict) -> list:
             out.append(R(FAIL, f"kalbėtojų modelio SHA-256 nesutampa: {f.name}", f"rm {f} && make models"))
         else:
             out.append(R(OK, f"kalbėtojų modelis: {what}"))
+    return out
+
+
+def check_voices() -> list:
+    """Balsų saugykla: ar suderinama su dabartiniu balso modeliu; kiek balsų žinoma."""
+    from diktatura.speakers import store
+    if not store.compatible():
+        return [R(FAIL, f"balsai paskaičiuoti senu modeliu ({store.model_id()}) — vardai nerašomi",
+                  "make speakers-migrate APPLY=1  (paskui: make speakers-relabel)")]
+    n, own, pend = len(store.counts()), store.owner_count(), store.pending_count()
+    out = [R(OK, f"balsų modelis {store.EMB_MODEL}: registruota {n}, laukia vardo {pend}")]
+    out.append(R(OK, f"tavo balso pavyzdžių: {own}") if own else
+               R(WARN, "tavo balsas nežinomas (prisijungus telefonu tavo eilutės gaus „Kolega?“)",
+                 "Tekste ant savo eilutės: ✎ Kas kalbėjo? → Tu (arba Apmokymuose „🙋 Tai aš“)"))
     return out
 
 
@@ -235,6 +249,7 @@ def run_all() -> list:
         ("Python aplinkos", check_python()),
         ("Darbalaukis", check_desktop()),
         ("Modeliai", check_models(cfg)),
+        ("Balsai", check_voices()),
         ("Nustatymai", check_config()),
         ("Servisai", check_services(cfg)),
         ("Privatumas (git)", check_git()),

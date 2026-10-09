@@ -41,6 +41,7 @@ PENDING = SPEAKERS / "pending"
 SPEAKER_SAMPLES = DATA_DIR / "speakers_samples"
 MODELS = DATA_DIR / "models"
 DIARIZATION_MODELS = MODELS / "diarization"
+EMB_MODEL_FILE = DIARIZATION_MODELS / "embedding_campplus_zh_en.onnx"   # balso embedding (vardai), žr. store.EMB_MODEL
 HF_HOME = MODELS / "hf"
 
 # Nustatymai

@@ -32,7 +32,7 @@ Visi keliai apibrėžti **vienoje vietoje**: `diktatura/paths.py` (Python, tik s
 |---|---|---|
 | Nustatymai | `~/.config/diktatura/diktatura.conf` (numatytieji: `config/diktatura.conf.default`) | `DIKTATURA_CONFIG_DIR` |
 | Įrašai, tekstai | `~/.local/share/diktatura/recordings/` | `DIKTATURA_DATA` (visai duomenų šakniai) |
-| Balsai | `~/.local/share/diktatura/speakers/{enroll.json,pending/,ignored.json,assigned.json}` | ↑ |
+| Balsai | `~/.local/share/diktatura/speakers/{enroll.json,owner.json,pending/,ignored.json,assigned.json}` | ↑ |
 | Žymės (⭐/☐), statistikos nunulinimas | `~/.local/share/diktatura/{annotations,stats_reset}.json` | ↑ |
 | Modeliai | `~/.local/share/diktatura/models/{azuolas-ct2,diarization,hf}` | ↑ |
 | Logai | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log` | `DIKTATURA_STATE` |
@@ -78,14 +78,24 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
 - ASR moduliai turi `run(argv, get_model)` — modelį paduoda `diktatura.asr.models.load` (atskiras procesas) arba
   nuolatinis serveris (`diktatura.asr.server`, žr. žemiau).
 - `diktatura.asr.transcribe_named` (pagrindinis): `loudnorm` kiekvienam kanalui → VAD → Whisper(Ąžuolas) L ir R →
-  kiekvienam R (kolegų) segmentui **balso embedding** (sherpa-onnx) → cosine su `enroll.json`;
-  nežinomas → išsaugo pavyzdį `speakers/pending/` ir žymi `Kolega?nezN`. Tada **de-dup**: „Tu" eilutės,
+  kiekvienam R (kolegų) segmentui **balso embedding** (sherpa-onnx) → cosine su `enroll.json` ir tavo balsu
+  (`owner.json`); **griežtas sprendimas** (`speakerlib.decide`): vardas tik jei panašumas ≥ `SPEAKER_THRESHOLD` IR
+  bent `SPEAKER_MARGIN` didesnis nei antro kandidato — kitaip `Kolega?` (du žinomi balsai per panašūs → ne naujas
+  žmogus, į pending nededama). Tavo balsas R kanale (prisijungęs telefonu) → `Tu`.
+  Nežinomas → išsaugo pavyzdį `speakers/pending/` ir žymi `Kolega?nezN`. Tada **de-dup**: „Tu" eilutės,
   kurių ≥60% žodžių yra laike persidengiančiose „Kolegos" eilutėse → nutekėjimas → išmetama.
 - `diktatura.asr.transcribe`: mono įrašams (be kalbėtojų) → `.txt` + `.srt`.
-- `diktatura.speakers.speakerlib`: embedding (CAM++ en VoxCeleb ONNX), cosine, `label_segments` (gryna vardų
-  priskyrimo logika: registruotas → vardas; „triukšmas" (ignored) → `Kolega?`; nežinomas → `Kolega?nezN` + pending).
-- `diktatura.speakers.store` (**tik stdlib** — naudoja ir UI): `enroll.json`, `pending/` (id niekada nekartojami —
-  `pending/.next`), `ignored.json`, `assigned.json`; `assign` / `discard` / `rename_speaker` ir **retroaktyvus
+- `diktatura.speakers.speakerlib`: embedding (3D-Speaker CAM++ zh-en „advanced" ONNX, `paths.EMB_MODEL_FILE`), cosine,
+  `ranked` / `decide` (slenkstis +
+  atsarga), `label_segments` (gryna vardų priskyrimo logika: registruotas → vardas; tavo balsas → `Tu`; per panašūs →
+  `Kolega?`; „triukšmas" (ignored) → `Kolega?`; nežinomas → `Kolega?nezN` + pending).
+- `diktatura.speakers.teach` (.venv): **mokymasis iš pataisymo** — Teksto „✎ Kas kalbėjo?" → UI pervadina eilutę
+  (`store.relabel_line`) ir fone paleidžia `teach <tekstas> <eilutė> <vardas|Tu>`: eilutės atkarpa (iki kitos eilutės,
+  ≤ 20 s) iš wav/mp3, R kanalas jei jame yra kalbos (kitaip L), tik kalba (VAD) → embedding → `enroll.json` arba
+  `owner.json`. Išėjimo kodai: 0 išmokta, 3 per mažai kalbos (< 1.5 s), 2 nėra garso/eilutės.
+- `diktatura.speakers.store` (**tik stdlib** — naudoja ir UI): `enroll.json`, `owner.json` (tavo balsas, paskutiniai
+  40 pavyzdžių), `pending/` (id niekada nekartojami — `pending/.next`), `ignored.json`, `assigned.json`;
+  `assign` (vardas „Tu" → `assign_owner`) / `discard` / `rename_speaker` / `relabel_line` ir **retroaktyvus
   pervadinimas tekstuose** (`Kolega?nezN` → vardas, tik kalbėtojo vietoje). `resolve_labels` — jei vardas priskirtas
   transkripcijos metu, nauja transkripcija pasitaiso.
 - `diktatura.asr.dialog` (stdlib): de-dup ir eilučių formatavimas; `diktatura.sessions` (stdlib): įrašų vardai/datos,
@@ -115,12 +125,14 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
     filtrai (kalbėtojas; laikotarpis — pask. `RETENTION_DAYS` d. / šiandien / vakar / 7 / 30 d. / visas archyvas;
     tik žymėtos). Eilutės pradžioje `TextMark` → `line_at_iter()` (išlieka redaguojant) — ant jo remiasi dešinio klik
     meniu: ▶ groti nuo eilutės (`ui.player.SeekPlayer` — ffplay; grojama eilutė paryškinama), ⭐/☐/☑ žymės
-    (`diktatura.annotations`, `<duomenys>/annotations.json`), 🎓 priskirti vardą `Kolega?nezN`. 📊 statistika
+    (`diktatura.annotations`, `<duomenys>/annotations.json`), 🎓 priskirti vardą `Kolega?nezN`, ✎ Kas kalbėjo?
+    (pataisyti kalbėtoją + išmokti balsą fone — `speakers.teach`, komanda `text_page.teach_cmd`). 📊 statistika
     (`sessions.speaker_stats`; „↺ Nunulinti" — `diktatura.stats`: skaičiuoja tik eilutes po įsiminto laiko, nieko
     netrina), 💾 eksportas (.txt/.md).
   - `ui.training_page` (🎓 Apmokymai): pending sąrašas + kontekstas (`store.occurrences_many`), ▶ grojimas
-    (`paplay`; testams `DIKTATURA_PLAYER`), vardas su autocomplete → `store.assign`; „Ne žmogus" → `store.discard`;
-    registruoti balsai: pervadinti/sujungti/pamiršti. Po pakeitimų perpiešia Teksto skiltį.
+    (`paplay`; testams `DIKTATURA_PLAYER`), vardas su autocomplete → `store.assign`; „🙋 Tai aš" → `store.assign_owner`;
+    „Ne žmogus" → `store.discard`; registruoti balsai: tavo balsas (pamiršti) + kolegos: pervadinti/sujungti/pamiršti.
+    Po pakeitimų perpiešia Teksto skiltį.
   - `ui.settings_page` (⚙ Nustatymai): laukai generuojami iš `config.SCHEMA` (naujas raktas schemoje atsiranda
     automatiškai), įrašymo režimas per `services`, validacija prie laukų, „Atkurti numatytus".
 - `ui.gtk`: GTK versijos ir bendras CSS vienoje vietoje. UI moduliuose — jokio numpy/faster-whisper.
@@ -154,10 +166,26 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
 - **faster-whisper (CTranslate2, int8)** — greitas CPU, be runtime torch. Ąžuolas konvertuotas į CT2
   (`tools/convert_azuolas.sh`, torch reikia tik konversijai — laikiname venv).
 - **sherpa-onnx diarizacijai/embeddingams** — ONNX, **be torch**, be HF tokeno → lengva šiai geležei.
-  Embedding: CAM++ **en VoxCeleb** (tinka ne-kinų/LT balsams).
+  Embedding: **3D-Speaker CAM++ zh-en „advanced"** (nuo 2026-10-09; anksčiau CAM++ en VoxCeleb). Pasirinkta
+  matuojant savininko įrašuose (vienkartinis tyrimas, 7 sherpa-onnx modeliai; tavo „Tu" segmentai iš skirtingų
+  pokalbių vs kolegų segmentai): EER — CAM++ VoxCeleb ~13 %, wespeaker CAM++ LM ~13 %, ResNet34 LM ~8 %,
+  **CAM++ zh-en advanced ~0–1 %**, TitaNet large ~0–1 % (2.6× lėtesnis), ERes2NetV2 ~0–1 % (7× lėtesnis).
+  Tas pats dydis (28 MB) ir greitis kaip buvusio. Pastebėta: seno modelio vardai tekstuose buvo beveik atsitiktiniai
+  (tos pačios žymės eilutės tarpusavyje ne panašesnės nei skirtingų; naujas modelis vakarykščiuose pokalbiuose rado
+  ~7 balsus, kuriuos senas beveik visus vadino vienu vardu). Todėl senų balsų „neperkeliam" — `make speakers-migrate`
+  juos archyvuoja, vardai išmokstami iš naujo (Apmokymai, „✎ Kas kalbėjo?", `make speakers-relabel`).
+  Žymė `speakers/model.json`: skirtingų modelių vektoriai nesulyginami — nesuderinama saugykla → vardai nerašomi.
 - **STEREO (L=mic, R=monitor)** — leidžia „Tu vs kolegos" atskyrimą be diarizacijos; kolegų kanalas švarus.
 - **De-dup (žodžių persidengimas)** — headset mic pagauna kolegų garsą (nutekėjimas į L); kadangi tavo balso
-  R kanale niekada nėra, dubliuotos „Tu" eilutės = nutekėjimas → šalinamos.
+  R kanale paprastai nėra, dubliuotos „Tu" eilutės = nutekėjimas → šalinamos. **Išimtis** — prisijungęs prie to paties
+  skambučio telefonu: tavo balsas ateina ir per R. Tada R eilutė žymima „Tu" (jei tavo balsas žinomas), o L kopija
+  išmetama kaip dublis.
+- **Griežti vardai (2026-10-09)** — klaidingas vardas blogiau už „Kolega?". Anksčiau: geriausias panašumas ≥ 0.5 →
+  vardas, net jei antras kandidatas beveik toks pat, o tavo balso R kanale nebuvo su kuo palyginti (prisijungus
+  telefonu tavo eilutė gavo kolegos vardą). Dabar: slenkstis + atsarga iki antro + tavo balsas kaip kandidatas;
+  tavo balsas mokomas iš pataisymų (iš to paties kelio, t. y. telefono garso R kanale): matuota — tavo mikrofono
+  balso vidurkis su tavo balsu per telefoną panašus tik ~0.3–0.6 (visi 7 modeliai), mažiau nei su kuriuo nors kolega,
+  todėl „išmokti tave iš mikrofono" automatiškai nepadėtų.
 - **Adaptyvus VOX gate** — mic lygis driftuoja (Slack AGC / Ubuntu), tad fiksuoti dB slenksčiai trapūs;
   adaptyvus (triukšmas + atsarga) prisitaiko.
 - **`deferred` režimas + flock eilė + nice/ionice + buferiai** — **svarbiausia pamoka:** transkripcija
@@ -194,6 +222,17 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
   (pvz. tylos uodega faile), ne laikrodžiu.
 - **Kolegų vardai kode/testuose** — draudžiami (repo public): sargas blokuoja `.private-terms` terminus. Testuose —
   tik išgalvoti vardai (Ona, Jonas, Rūta…).
+- **Balso modelis ir saugykla — pora:** embedding'ai iš skirtingų modelių nesulyginami. Keičiant modelį — naujas
+  `store.EMB_MODEL` + `tools/fetch_models.sh` (URL, SHA-256); senų balsų saugykla tampa nesuderinama (vardai
+  nerašomi, doctor — FAIL) iki `make speakers-migrate APPLY=1`. Balsų garso pavyzdžiai (išskyrus pending) nesaugomi,
+  todėl seni balsai neperskaičiuojami — tik archyvuojami.
+- **Nežinomi balsai — be „grandinės":** naujas segmentas lyginamas tik su pirmu nezN pavyzdžiu. Bandyta kaupti
+  variantus (mažiau skaldymo) — 2 dienų tekstuose ~9 balsai susiliejo į 2 (A~A', A'~B…). Suskaidytą žmogų sujungti
+  lengva (tas pats vardas Apmokymuose), suliejimo — ne.
+- **`pending/.next` po `flock`:** nežinomus balsus vienu metu gali kurti transkripcija ir `make speakers-relabel`.
+- **Testų LT fixture'ai — vienas kalbėtojas** (Common Voice klipai) — „skirtingų žmonių" testams netinka.
+- **GTK laikmačiai po lango uždarymo:** `GLib.timeout_add` gyvena ilgiau už langą — sunaikintų valdiklių lietimas =
+  segfault (pagauta UI testuose: „✎ Kas kalbėjo?" mokymosi laikmatis). Laikmačio callback'ai tikrina `self._alive`.
 
 ## 6. Privatumo sargas (git)
 
@@ -223,8 +262,8 @@ biometrija). Apsauga sluoksniais — kiekvienas veikia net jei kitas sugenda:
 
 | Komanda | Kas | Trukmė |
 |---|---|---|
-| `make test` | greiti: nustatymai, VOX (sintetinis capture), Slack (netikras `pactl`/`ffmpeg`), eilė (netikras ASR), de-dup, kalbėtojai, doctor, UI, privatumas | ~40 s |
-| `make test-full` | tikras Ąžuolas + LT kalba (Common Voice CC0, `make fixtures`), WER ≤ 25 % | ~1–5 min |
+| `make test` | greiti: nustatymai, VOX (sintetinis capture), Slack (netikras `pactl`/`ffmpeg`), eilė (netikras ASR), de-dup, kalbėtojai (griežtumas, tavo balsas, pataisymai, modelio perėjimas), doctor, UI, privatumas | ~1.5 min |
+| `make test-full` | tikras Ąžuolas + LT kalba (Common Voice CC0, `make fixtures`), WER ≤ 25 %; tikras balso modelis; tavo balsas R kanale → „Tu" | ~1–5 min |
 | `make test-e2e` | tikras VOX + ffmpeg per virtualius PulseAudio įrenginius | ~2 min |
 | `make test-privacy` | privatumo sargas | ~10 s |
 

@@ -81,6 +81,14 @@ SCHEMA = (
     Setting("VAD_TRIM", "bool", "VAD (kalbos filtras)", "Apkarpyti iki kalbos",
             "Whisper'iui duoti tik kalbos atkarpas. Matuota: greičio nauda maža (2–4 %, Whisper turi savo VAD), o "
             "tekstas šiek tiek skiriasi — todėl numatytai išjungta. Kalbos neturintys įrašai/kanalai praleidžiami bet kuriuo atveju."),
+    # ── Kalbėtojai ──
+    Setting("SPEAKER_THRESHOLD", "float", "Kalbėtojai", "Vardo slenkstis (balso panašumas)",
+            "Kiek balsas turi būti panašus į registruotą, kad būtų parašytas vardas (0–1). Didesnis = griežčiau: "
+            "mažiau klaidingų vardų, daugiau „Kolega?\".", 0.3, 0.95, step=0.05),
+    Setting("SPEAKER_MARGIN", "float", "Kalbėtojai", "Atsarga iki antro kandidato",
+            "Vardas rašomas tik jei balsas bent tiek panašesnis į tą žmogų nei į kitą (taip pat ir į tave). "
+            "Jei du balsai per panašūs — „Kolega?\" (geriau nežinomas nei klaidingas vardas). 0 — išjungta.",
+            0, 0.5, step=0.05),
     # ── Archyvas ──
     Setting("DELETE_EMPTY", "bool", "Archyvas", "Trinti tuščius įrašus",
             "Jei transkripcijoje nėra teksto (triukšmas) — ištrinti ir garsą, ir tekstą."),

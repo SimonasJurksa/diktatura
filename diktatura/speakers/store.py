@@ -7,10 +7,15 @@ Failai (<duomenys>/speakers/, paths.SPEAKERS):
   ignored.json   [embedding, ...] — „ne žmogus / triukšmas": toks balsas į pending nebededamas
   assigned.json  {nezN: vardas | ""} — kam priskirtas buvęs nežinomas ("" = triukšmas). Transkripcija,
                  kuri vyko priskyrimo metu, pagal jį pasitaiso savo eilutes (resolve_labels).
+  model.json     {"embedding_model", "since"} — KOKIU modeliu paskaičiuoti embedding'ai (skirtingų modelių vektoriai
+                 nesulyginami; be žymės, bet su balsais = LEGACY_MODEL -> make speakers-migrate)
+  owner.json     [{"embedding", "src", "added"}, ...] — TAVO balsas (paskutiniai OWNER_MAX pavyzdžių): jei kalbi
+                 per kolegų kanalą (pvz. prisijungęs telefonu), tokios eilutės žymimos „Tu", o ne kolegos vardu.
 
 Tekstuose nežinomas balsas žymimas „Kolega?nezN"; priskyrus vardą, visose transkripcijose
 „Kolega?nezN" -> vardas (rename_in_transcripts). Embedding'ai čia — paprasti sąrašai (be numpy).
 """
+import fcntl
 import json
 import os
 import re
@@ -22,6 +27,9 @@ from pathlib import Path
 from diktatura import paths, sessions
 
 UNKNOWN = "Kolega?"
+EMB_MODEL = "3dspeaker_campplus_zh_en_advanced"      # dabartinis balso modelis (failas — paths.EMB_MODEL_FILE)
+LEGACY_MODEL = "3dspeaker_campplus_en_voxceleb"      # iki 2026-10-09 (tada žymės failo nebuvo)
+ME = "Tu"               # tavo eilutės (L kanalas; R kanale — kai atpažintas tavo balsas)
 PID = re.compile(r"^nez(\d+)$")
 
 
@@ -38,6 +46,43 @@ def _read_json(path: Path, default):
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return default
+
+
+# ── Balso modelis ──
+
+def _model_file() -> Path:
+    return paths.SPEAKERS / "model.json"
+
+
+def has_voices() -> bool:
+    return bool(load_enroll_raw() or load_ignored() or load_owner_raw() or list_pending())
+
+
+def model_id():
+    """Kokiu modeliu paskaičiuoti saugomi balsai: žymė; be žymės — LEGACY_MODEL, jei balsų yra; None — saugykla tuščia."""
+    d = _read_json(_model_file(), {})
+    if isinstance(d, dict) and d.get("embedding_model"):
+        return d["embedding_model"]
+    return LEGACY_MODEL if has_voices() else None
+
+
+def compatible() -> bool:
+    """Ar saugomi balsai sulyginami su dabartiniu modeliu (tuščia saugykla — taip)."""
+    return model_id() in (None, EMB_MODEL)
+
+
+def mark_model(model: str = EMB_MODEL) -> None:
+    _atomic_write(_model_file(), json.dumps({"embedding_model": model,
+                                             "since": datetime.now().isoformat(timespec="seconds")}))
+
+
+def claim_model() -> None:
+    """Prieš rašant NAUJO modelio embedding'ą: tuščiai saugyklai uždėti žymę; senam modeliui — klaida."""
+    mid = model_id()
+    if mid is None:
+        mark_model()
+    elif mid != EMB_MODEL:
+        raise RuntimeError(f"balsai paskaičiuoti kitu modeliu ({mid}) — paleisk: make speakers-migrate")
 
 
 # ── Registruoti balsai ──
@@ -67,6 +112,34 @@ def add_embedding(name: str, embedding) -> int:
     return len(store[name])
 
 
+# ── Tavo balsas ──
+
+OWNER_MAX = 40          # seniausi pavyzdžiai išmetami (balsas / mikrofonas / telefonas keičiasi)
+
+
+def load_owner_raw() -> list:
+    d = _read_json(paths.SPEAKERS / "owner.json", [])
+    return [o for o in d if isinstance(o, dict) and o.get("embedding")] if isinstance(d, list) else []
+
+
+def owner_count() -> int:
+    return len(load_owner_raw())
+
+
+def add_owner(embedding, src: str = "") -> int:
+    """Pridėti tavo balso pavyzdį; grąžina pavyzdžių skaičių."""
+    d = load_owner_raw()
+    d.append({"embedding": [float(x) for x in embedding], "src": src,
+              "added": datetime.now().isoformat(timespec="seconds")})
+    d = d[-OWNER_MAX:]
+    _atomic_write(paths.SPEAKERS / "owner.json", json.dumps(d))
+    return len(d)
+
+
+def clear_owner() -> None:
+    (paths.SPEAKERS / "owner.json").unlink(missing_ok=True)
+
+
 def clean_name(name: str) -> str:
     """Vardas tekste stovi prieš „:" — dvitaškis ir naujos eilutės neleidžiami."""
     n = " ".join(str(name).replace(":", " ").split())
@@ -74,7 +147,13 @@ def clean_name(name: str) -> str:
         raise ValueError("Vardas negali būti tuščias")
     if n.startswith(UNKNOWN):
         raise ValueError(f"Vardas negali prasidėti „{UNKNOWN}“")
+    if n.casefold() == ME.casefold():
+        raise ValueError(f"„{ME}“ — tavo balsas, ne kolegos vardas")
     return n
+
+
+def is_me(name: str) -> bool:
+    return " ".join(str(name).split()).casefold() == ME.casefold()
 
 
 # ── Nežinomi balsai (pending) ──
@@ -116,17 +195,22 @@ def pending_count() -> int:
 
 
 def next_pending_id() -> str:
-    """Naujas id: didesnis už bet kurį esamą ir už visus kada nors išduotus (pending/.next)."""
+    """Naujas id: didesnis už bet kurį esamą ir už visus kada nors išduotus (pending/.next).
+    Po flock: transkripcija ir `make speakers-relabel` gali kurti nežinomus balsus vienu metu."""
     paths.PENDING.mkdir(parents=True, exist_ok=True)
-    counter = paths.PENDING / ".next"
-    try:
-        nxt = int(counter.read_text().strip())
-    except (FileNotFoundError, ValueError):
-        nxt = 1
-    used = [_pid_num(p.stem) for p in paths.PENDING.glob("nez*.json")]
-    used += [_pid_num(k) for k in load_assigned()]
-    n = max([nxt] + [u + 1 for u in used])
-    counter.write_text(str(n + 1))
+    with open(paths.PENDING / ".next", "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        try:
+            nxt = int(fh.read().strip())
+        except ValueError:
+            nxt = 1
+        used = [_pid_num(p.stem) for p in paths.PENDING.glob("nez*.json")]
+        used += [_pid_num(k) for k in load_assigned()]
+        n = max([nxt] + [u + 1 for u in used])
+        fh.seek(0)
+        fh.truncate()
+        fh.write(str(n + 1))
     return f"nez{n}"
 
 
@@ -166,13 +250,24 @@ def load_ignored() -> list:
 
 def assign(pid: str, name: str) -> int:
     """Nežinomas balsas -> vardas: embedding į enroll.json, pending pašalinamas, tekstuose
-    „Kolega?nezN" -> vardas. Grąžina pakeistų teksto eilučių skaičių."""
+    „Kolega?nezN" -> vardas. Vardas „Tu" -> tai tavo balsas (assign_owner). Grąžina pakeistų teksto eilučių skaičių."""
+    if is_me(name):
+        return assign_owner(pid)
     name = clean_name(name)
     p = get_pending(pid)
     add_embedding(name, p.embedding)
     _remember_assigned(pid, name)
     _remove_pending(pid)
     return rename_in_transcripts(label_for(pid), name)
+
+
+def assign_owner(pid: str) -> int:
+    """Nežinomas balsas — tai TU (pvz. prisijungęs telefonu): embedding -> owner.json, tekstuose -> „Tu"."""
+    p = get_pending(pid)
+    add_owner(p.embedding, p.src)
+    _remember_assigned(pid, ME)
+    _remove_pending(pid)
+    return rename_in_transcripts(label_for(pid), ME)
 
 
 def discard(pid: str, remember: bool = True) -> int:
@@ -244,6 +339,56 @@ def rename_in_transcripts(old_label: str, new_label: str, rec_dir=None) -> int:
             _atomic_write(f, new)
             total += n
     return total
+
+
+def line_span(path, idx: int, max_sec: float = 20.0):
+    """Eilutės laikas sekundėmis (pradžia, pabaiga): iki kitos eilutės su laiku (ne ilgiau max_sec). None — be laiko."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    p = sessions.parse_line(lines[idx]) if 0 <= idx < len(lines) else None
+    if not p:
+        return None
+    t0 = sessions.ts_seconds(p[0])
+    t1 = t0 + max_sec
+    for ln in lines[idx + 1:]:
+        q = sessions.parse_line(ln)
+        if q and sessions.ts_seconds(q[0]) > t0:
+            t1 = min(t1, sessions.ts_seconds(q[0]))
+            break
+    return float(t0), float(t1)
+
+
+def relabel_line(path, idx: int, old: str, new: str) -> bool:
+    """Vienos eilutės kalbėtojas old -> new (pataisymas tekste). False — eilutė jau kita (pasikeitė failas)."""
+    path = Path(path)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError):
+        return False
+    p = sessions.parse_line(lines[idx].rstrip("\n")) if 0 <= idx < len(lines) else None
+    if not p or p[1] != old:
+        return False
+    nl = "\n" if lines[idx].endswith("\n") else ""
+    lines[idx] = f"[{p[0]}] {new}: {p[2]}{nl}"
+    _atomic_write(path, "".join(lines))
+    return True
+
+
+def text_speakers(rec_dir=None) -> set:
+    """Vardai, kurie yra tekstuose (be „Tu" ir „Kolega?…") — vardų užbaigimui Apmokymuose."""
+    out = set()
+    for f in sessions.text_files(Path(rec_dir or paths.RECORDINGS)):
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for ln in text.splitlines():
+            p = sessions.parse_line(ln)
+            if p and p[1] != ME and not p[1].startswith(UNKNOWN):
+                out.add(p[1])
+    return out
 
 
 def occurrences(label: str, rec_dir=None) -> list:

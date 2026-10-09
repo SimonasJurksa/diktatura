@@ -175,3 +175,110 @@ def test_corrupt_store_files_do_not_crash(env):
     (env.pending / "nez9.json").write_text("ne json")
     (env.pending / "nez8.json").write_text(json.dumps({"src": "be embedding"}))
     assert store.load_enroll_raw() == {} and store.list_pending() == []
+
+
+# ── griežtumas: slenkstis + atsarga; tavo balsas kolegų kanale ──
+
+def test_g6_decide_threshold_margin():
+    assert sl.decide([], 0.5, 0.1) == (None, "low")
+    assert sl.decide([(0.45, "Ona")], 0.5, 0.1) == (None, "low")
+    assert sl.decide([(0.8, "Ona"), (0.75, "Jonas")], 0.5, 0.1) == (None, "close")     # per panašūs
+    assert sl.decide([(0.8, "Ona"), (0.65, "Jonas")], 0.5, 0.1) == ("Ona", "ok")
+    assert sl.decide([(0.8, "Ona"), (0.79, "Jonas")], 0.5, 0.0) == ("Ona", "ok")       # atsarga išjungta
+    reg = {"Ona": [vec(0)], "Jonas": [vec(1), vec(2)], "Tuščias": []}
+    assert [n for _, n in sl.ranked(vec(2), reg)] == ["Jonas", "Ona"]                   # be pavyzdžių — praleidžiamas
+
+
+def mix(a, b, w):
+    v = (1 - w) * vec(a) + w * vec(b)
+    return v / np.linalg.norm(v)
+
+
+def label_with(env, spec, embs, store_=None, owner=None, margin=0.1):
+    """spec: [(start, end, kalbėtojo nr)]; embs: {nr: embedding} — tiksliai valdomi panašumai."""
+    samples, segs = segments_signal(spec)
+    emb = lambda seg: embs[int(round(float(seg[len(seg) // 2]) * 100)) - 1]
+    return sl.label_segments(segs, samples, store_ or {}, sl.load_pending(), {}, 0.5, emb, sl.add_pending,
+                             "vox_20261009_120000", margin=margin, owner=owner)
+
+
+def test_g6_owner_voice_on_colleague_channel_is_tu(env):
+    """Prisijungęs telefonu kalbi per kolegų kanalą: tavo balsas -> „Tu", ne panašiausias kolega."""
+    store_ = {"Darius": [vec(1)]}
+    embs = {0: mix(0, 1, 0.45), 1: vec(1, 0.05)}       # 0 — tu (Dariui 0.63, sau 0.77), 1 — Darius
+    rows, new = label_with(env, [(0, 3, 0), (4, 7, 1)], embs, store_)
+    assert [r[2] for r in rows] == ["Darius", "Darius"]                                 # be tavo balso — klaida
+    sl.save_enroll(store_)
+    store.add_owner(vec(0), "x")
+    rows, new = label_with(env, [(0, 3, 0), (4, 7, 1)], embs, store_, owner=sl.load_owner())
+    assert [r[2] for r in rows] == ["Tu", "Darius"] and new == 0
+
+
+def test_g6_ambiguous_known_voices_become_unknown_without_pending(env):
+    store_ = {"Rūta": [vec(0)], "Matas": [vec(1)]}
+    embs = {0: mix(0, 1, 0.48)}                          # beveik per vidurį tarp Rūtos ir Mato
+    rows, new = label_with(env, [(0, 3, 0)], embs, store_)
+    assert rows[0][2] == "Kolega?" and new == 0 and not store.list_pending()
+    rows, _ = label_with(env, [(0, 3, 0)], embs, store_, margin=0.0)                    # be atsargos — kaip anksčiau
+    assert rows[0][2] == "Rūta"
+
+
+def test_g7_pending_voice_assigned_to_me_goes_to_owner(env):
+    sl.add_pending(vec(3), np.zeros(SR), SR, "vox_20261009_120000")
+    f = write_transcript(env, "vox_20261009_120000.named.txt", "[0:00:01] Kolega?nez1: dar nespėjau\n")
+    assert store.assign("nez1", " tu ") == 1
+    assert f.read_text(encoding="utf-8") == "[0:00:01] Tu: dar nespėjau\n"
+    assert store.counts() == {} and store.owner_count() == 1 and not store.list_pending()
+    np.testing.assert_allclose(sl.load_owner()[0], vec(3), atol=1e-6)
+    assert store.load_assigned() == {"nez1": "Tu"}
+    with pytest.raises(ValueError):
+        store.clean_name("Tu")                                                         # ne kolegos vardas
+    sl.save_enroll({"Ona": [vec(0)]})
+    with pytest.raises(ValueError):
+        store.rename_speaker("Ona", "TU")
+
+
+def test_g7_owner_samples_capped_and_cleared(env):
+    for i in range(store.OWNER_MAX + 5):
+        store.add_owner(vec(i % DIM), f"s{i}")
+    raw = store.load_owner_raw()
+    assert len(raw) == store.OWNER_MAX and raw[0]["src"] == "s5"                       # seniausi išmesti
+    store.clear_owner()
+    assert store.owner_count() == 0 and sl.load_owner() == []
+    (env.speakers / "owner.json").write_text("{sugadinta")
+    assert store.load_owner_raw() == []
+
+
+def test_g8_line_span_and_relabel(env):
+    f = write_transcript(env, "vox_20261009_120000.named.txt",
+                         "[0:02:40] Darius: kaip sekasi\n[0:02:53] Darius: dar nespėjau\n"
+                         "be laiko\n[0:02:58] Matas: ir\n[0:10:00] Matas: vėliau\n")
+    assert store.line_span(f, 0) == (160.0, 173.0)
+    assert store.line_span(f, 1) == (173.0, 178.0)
+    assert store.line_span(f, 3) == (178.0, 198.0)                                     # ≤ 20 s
+    assert store.line_span(f, 2) is None and store.line_span(f, 99) is None
+    assert store.relabel_line(f, 1, "Darius", "Tu")
+    assert not store.relabel_line(f, 1, "Darius", "Matas")                             # eilutė jau pasikeitė
+    assert f.read_text(encoding="utf-8").splitlines()[:2] == [
+        "[0:02:40] Darius: kaip sekasi", "[0:02:53] Tu: dar nespėjau"]
+
+
+def test_g3_unknown_voice_no_chaining(env):
+    """A -> A' -> A'': kiekvienas panašus į ankstesnį, bet A'' nepanašus į A — NEsuliejama „grandine"
+    (kitaip skirtingi žmonės susilieja į vieną nezN; suskaidytą žmogų lengva sujungti tuo pačiu vardu)."""
+    a0 = vec(0)
+    a1 = mix(0, 1, 0.45)                                   # ~0.77 su a0
+    a2 = mix(1, 0, 0.3)                                    # ~0.89 su a1, ~0.39 su a0
+    embs = {0: a0, 1: a1, 2: a2}
+    rows, new = label_with(env, [(0, 2, 0), (3, 5, 1), (6, 8, 2)], embs, margin=0.1)
+    assert [r[2] for r in rows] == ["Kolega?nez1", "Kolega?nez1", "Kolega?nez2"] and new == 2
+
+
+def test_pending_ids_unique_across_processes(env):
+    """Transkripcija ir relabel gali kurti nežinomus balsus vienu metu — id neturi kartotis."""
+    import subprocess
+    import sys
+    code = "from diktatura.speakers import store; print(' '.join(store.next_pending_id() for _ in range(25)))"
+    ps = [subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True) for _ in range(4)]
+    ids = [i for p in ps for i in p.communicate(timeout=60)[0].split()]
+    assert len(ids) == 100 and len(set(ids)) == 100

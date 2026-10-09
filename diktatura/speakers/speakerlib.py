@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Balso embedding'ai ir vardų priskyrimas (sherpa-onnx CAM++, be torch).
+"""Balso embedding'ai ir vardų priskyrimas (sherpa-onnx, 3D-Speaker CAM++ zh-en „advanced", be torch).
+
+Modelis pasirinktas 2026-10-09 matuojant savininko įrašuose (docs/ARCHITECTURE.md §3): tavo balsas vs kolegos —
+EER ~0–1 % (buvęs CAM++ VoxCeleb — ~13 %), tas pats dydis ir greitis.
 
 - compute_embedding(samples) -> np.ndarray  (balso „pirštų atspaudas")
-- cosine(a, b), best_match(emb, store, threshold)
-- label_segments(...) — kolegų segmentams vardai: registruotas -> vardas; nežinomas -> „Kolega?nezN"
-  (naujas nežinomas išsaugomas į pending); „triukšmas" (ignored.json) -> „Kolega?".
+- cosine(a, b), best_match(emb, store, threshold), ranked(emb, store), decide(rank, threshold, margin)
+- label_segments(...) — kolegų segmentams vardai: registruotas -> vardas; tavo balsas -> „Tu";
+  du balsai per panašūs -> „Kolega?" (griežtumas: slenkstis + skirtumas iki antro);
+  nežinomas -> „Kolega?nezN" (naujas nežinomas išsaugomas į pending); „triukšmas" (ignored.json) -> „Kolega?".
 - Saugykla (enroll.json, pending/, ignored.json) — diktatura.speakers.store (tik stdlib); čia — numpy vaizdas.
 """
 import wave
@@ -18,7 +22,7 @@ _extractor = None
 
 
 def emb_model_path():
-    return paths.DIARIZATION_MODELS / "embedding_campplus_en.onnx"
+    return paths.EMB_MODEL_FILE
 
 
 def extractor():
@@ -55,12 +59,18 @@ def load_enroll() -> dict:
 
 
 def save_enroll(store: dict) -> None:
+    st.claim_model()
     st.save_enroll_raw({k: [np.asarray(e).tolist() for e in v] for k, v in store.items()})
 
 
 def load_pending() -> dict:
     """{id: [embedding]} — nežinomi balsai, laukiantys vardo."""
     return {p.id: [np.array(p.embedding, dtype=np.float32)] for p in st.list_pending()}
+
+
+def load_owner() -> list:
+    """Tavo balso embedding'ai [np.ndarray] (owner.json) — atpažinti tave kolegų kanale."""
+    return [np.array(o["embedding"], dtype=np.float32) for o in st.load_owner_raw()]
 
 
 def load_ignored() -> dict:
@@ -77,6 +87,7 @@ def write_wav(path, samples: np.ndarray, sr: int = 16000) -> None:
 
 def add_pending(emb: np.ndarray, samples: np.ndarray, sr: int, src: str) -> str:
     """Išsaugo nežinomo balso pavyzdį (wav, iki 15 s) + embedding; grąžina id (pvz. 'nez3')."""
+    st.claim_model()
     pid = st.next_pending_id()
     write_wav(paths.PENDING / f"{pid}.wav", samples[: sr * 15], sr)
     st.write_pending_meta(pid, np.asarray(emb).tolist(), src)
@@ -95,15 +106,38 @@ def best_match(emb: np.ndarray, store: dict, threshold: float = 0.5):
     return None, best_sim
 
 
+def ranked(emb: np.ndarray, store: dict) -> list:
+    """[(panašumas, vardas)] mažėjančiai; vardo panašumas — geriausias iš jo pavyzdžių."""
+    return sorted(((max(cosine(emb, e) for e in embs), name) for name, embs in store.items() if embs),
+                  key=lambda x: -x[0])
+
+
+def decide(rank, threshold: float, margin: float = 0.0):
+    """Griežtas sprendimas -> (vardas | None, priežastis):
+    "ok"    — geriausias >= slenksčio IR bent `margin` aukščiau už antrą (kitą vardą);
+    "close" — virš slenksčio, bet du balsai per panašūs (geriau „Kolega?" nei klaidingas vardas);
+    "low"   — niekas nesiekia slenksčio (naujas / nežinomas balsas)."""
+    if not rank or rank[0][0] < threshold:
+        return None, "low"
+    if len(rank) > 1 and rank[0][0] - rank[1][0] < margin:
+        return None, "close"
+    return rank[0][1], "ok"
+
+
 MIN_SEG_SEC = 0.8      # trumpesniam segmentui balso embedding nepatikimas -> „Kolega?"
 
 
-def label_segments(segs, samples, store, pending, ignored, threshold, embed, add_pending_fn, src, sr=16000):
+def label_segments(segs, samples, store, pending, ignored, threshold, embed, add_pending_fn, src, sr=16000,
+                   margin=0.0, owner=None, me_label="Tu"):
     """segs: [(start, end, tekstas)] kolegų kanale -> ([(start, end, kas, tekstas)], naujų nežinomų sk.).
 
-    Registruotas balsas -> vardas; atpažintas triukšmas (ignored) -> „Kolega?"; nežinomas -> „Kolega?nezN"
-    (tas pats nežinomas keliuose segmentuose/failuose -> tas pats nezN; naujas -> add_pending_fn).
-    pending papildomas vietoje (kad tame pačiame faile antras segmentas atpažintų ką tik pridėtą)."""
+    Registruotas balsas -> vardas; tavo balsas (owner, pvz. jungiesi telefonu ir kalbi per kolegų kanalą) -> me_label;
+    du balsai per panašūs (decide: "close") -> „Kolega?"; atpažintas triukšmas (ignored) -> „Kolega?";
+    nežinomas -> „Kolega?nezN" (tas pats nežinomas keliuose segmentuose/failuose -> tas pats nezN; naujas ->
+    add_pending_fn). pending papildomas vietoje (kad tame pačiame faile antras segmentas atpažintų ką tik pridėtą)."""
+    cands = dict(store)
+    if owner:
+        cands[me_label] = owner
     out, new = [], 0
     for s0, s1, tx in segs:
         who = st.UNKNOWN
@@ -111,14 +145,15 @@ def label_segments(segs, samples, store, pending, ignored, threshold, embed, add
             seg = samples[int(s0 * sr):int(s1 * sr)]
             if len(seg) >= sr * 0.5:
                 emb = embed(seg)
-                name, sim = best_match(emb, store, threshold) if store else (None, 0.0)
+                rank = ranked(emb, cands)
+                name, why = decide(rank, threshold, margin)
                 if debug.enabled():
-                    near = best_match(emb, store, -1.0)[0] if store else "-"
-                    debug.log("speakers", f"[{s0:7.1f}–{s1:7.1f}] artimiausias registruotas: {near} "
-                                          f"sim={sim:.2f} (slenkstis {threshold})")
+                    top = ", ".join(f"{n}={v:.2f}" for v, n in rank[:3]) or "-"
+                    debug.log("speakers", f"[{s0:7.1f}–{s1:7.1f}] {top} -> {name or why} "
+                                          f"(slenkstis {threshold}, skirtumas {margin})")
                 if name:
                     who = name
-                elif not (ignored and best_match(emb, ignored, threshold)[0]):
+                elif why == "low" and not (ignored and best_match(emb, ignored, threshold)[0]):
                     pid, _ = best_match(emb, pending, threshold) if pending else (None, 0.0)
                     if not pid:
                         pid = add_pending_fn(emb, seg, sr, src)

@@ -22,7 +22,7 @@ from diktatura import paths
 def model_paths():
     """(segmentacijos, embedding) ONNX keliai — skaičiuojami kvietimo metu (testai perrašo DIKTATURA_DATA)."""
     d = paths.DIARIZATION_MODELS
-    return d / "sherpa-onnx-pyannote-segmentation-3-0" / "model.onnx", d / "embedding_campplus_en.onnx"
+    return d / "sherpa-onnx-pyannote-segmentation-3-0" / "model.onnx", paths.EMB_MODEL_FILE
 
 
 def load_wav(path: str):

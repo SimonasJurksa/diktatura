@@ -252,3 +252,72 @@ def test_play_from_line_pauses_recording_and_close_stops(win):
     proc = tp.player.proc
     win.stop_audio()                             # tas pats, kas uždarant langą
     assert proc.poll() is not None and pause.info()["reason"] == "baigta groti"
+
+
+def test_correct_speaker_relabels_line_and_learns_voice(win, demo, monkeypatch, tmp_path):
+    """„✎ Kas kalbėjo?" -> eilutė pervadinama faile, balsas mokomas fone (.venv komanda; čia — netikra)."""
+    import json
+    import sys
+    from diktatura.ui import gtk, text_page
+    calls = tmp_path / "teach_calls"
+    reply = {"ok": True, "who": "Tu", "channel": "R", "speech_sec": 4.2, "count": 1}
+    monkeypatch.setattr(text_page, "teach_cmd", lambda path, idx, name: [
+        sys.executable, "-c", f"import sys; open({str(calls)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n'); "
+                              f"print({json.dumps(json.dumps(reply))})", str(path), str(idx), name])
+    tp = win.text
+    by = {ln.text: ln for ln in tp.visible_lines()}
+    ln = by["po diegimo"]
+    sub = next(m for m in tp.menu_items(ln) if getattr(m, "get_label", lambda: "")() == "✎ Kas kalbėjo? (ne Ona)")
+    assert [m.get_label() for m in sub.get_submenu().get_children()] == [
+        "🙋 Tu (aš)", "Kolega? (nežinomas — nemokyti)", "✎ Kitas vardas…"]
+    assert [n for n, _ in tp.correction_choices(by["gerai, paruošiu migraciją"])] == ["Ona", "Kolega?"]
+
+    assert tp.correct_speaker(ln, "Tu")
+    f = demo.recordings / f"slack_{day(0)}_100000.named.txt"
+    assert "[0:00:26] Tu: po diegimo" in f.read_text(encoding="utf-8")
+    assert "mokausi balso" in tp.status.get_text()
+    deadline = time.time() + 10
+    while "išmoktas" not in tp.status.get_text() and time.time() < deadline:
+        gtk.pump(0.1)
+    assert "balsas išmoktas (R kanalas, 4.2 s" in tp.status.get_text()
+    assert calls.read_text().split() == [str(f), "3", "Tu"]
+    assert "Tu: po diegimo" in tp.text()
+    assert not tp.correct_speaker(ln, "Tu")                               # sena eilutė — jau pakeista
+
+    ln2 = next(x for x in tp.visible_lines() if x.text == "rytoj diegimas į serverį")
+    assert tp.correct_speaker(ln2, "Kolega?")                             # nežinomas — nemokoma
+    assert "mokausi" not in tp.status.get_text() and len(calls.read_text().splitlines()) == 1
+
+
+def test_correct_speaker_to_new_typed_name(win, demo, monkeypatch):
+    """„✎ Kitas vardas…" — naujas vardas įvedamas ranka (po balso modelio keitimo tekstuose vardų dar nėra)."""
+    from diktatura.ui import text_page
+    monkeypatch.setattr(text_page, "teach_cmd", lambda *a: ["true"])
+    tp = win.text
+    ln = next(x for x in tp.visible_lines() if x.text == "po diegimo")
+    monkeypatch.setattr(tp, "ask_name", lambda _ln: "  Matas: ")
+    tp._ask_and_correct(ln)
+    assert "[0:00:26] Matas: po diegimo" in (demo.recordings / f"slack_{day(0)}_100000.named.txt").read_text("utf-8")
+    ln = next(x for x in tp.visible_lines() if x.text == "po diegimo")
+    monkeypatch.setattr(tp, "ask_name", lambda _ln: "Kolega?x")                # neleistinas vardas
+    tp._ask_and_correct(ln)
+    assert tp.status.get_text().startswith("✗") and ln.speaker == "Matas"
+    monkeypatch.setattr(tp, "ask_name", lambda _ln: "tu")
+    tp._ask_and_correct(ln)
+    assert "[0:00:26] Tu: po diegimo" in (demo.recordings / f"slack_{day(0)}_100000.named.txt").read_text("utf-8")
+
+
+def test_teach_poll_after_window_closed_does_not_touch_widgets(demo, fake_systemd, monkeypatch):
+    """Langas uždarytas, kol fone mokomasi balso: laikmatis neturi liesti sunaikintų valdiklių (buvo segfault)."""
+    from diktatura.ui import gtk, text_page
+    from diktatura.ui.app import MainWindow
+    monkeypatch.setattr(text_page, "teach_cmd", lambda *a: ["sleep", "0.3"])
+    w = MainWindow(auto_refresh=False)
+    w.show_all()
+    gtk.pump(0.05)
+    ln = next(x for x in w.text.visible_lines() if x.text == "po diegimo")
+    assert w.text.correct_speaker(ln, "Tu")
+    tp = w.text
+    w.destroy()
+    gtk.pump(0.8)                                                           # laikmatis suveikia po uždarymo
+    assert not tp._alive

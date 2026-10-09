@@ -8,10 +8,15 @@
   Shift+Enter, Ctrl+F; „Regex"), filtras pagal kalbėtoją, „Tik žymėtos", „Kopijuoti viską", „Sekti naujus".
 - Dešinys klik ant eilutės: ▶ Groti nuo čia (įrašas groja nuo tos vietos, einama eilutė paryškinama; kol groja,
   VOX neįrašinėja — diktatura.pause),
-  ⭐ svarbu / ☐ užduotis (☑ atlikta), 🎓 priskirti vardą nežinomam balsui. 📊 Statistika (kas kiek kalbėjo),
+  ⭐ svarbu / ☐ užduotis (☑ atlikta), 🎓 priskirti vardą nežinomam balsui, ✎ Kas kalbėjo? (pataisyti kalbėtoją:
+  eilutė pervadinama, o jos balsas išmokstamas tam žmogui / tau — diktatura.speakers.teach, fone per .venv).
+  📊 Statistika (kas kiek kalbėjo),
   💾 Eksportuoti (matomas tekstas -> .txt / .md). Tekstą galima redaguoti prieš kopijuojant (failai nekeičiami).
 """
+import json
+import os
 import re
+import subprocess
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -28,6 +33,11 @@ REFRESH_SEC = 2
 PERIODS = (("keep", None), ("today", "Šiandien"), ("yesterday", "Vakar"), ("7", "Pask. 7 d."),
            ("30", "Pask. 30 d."), ("all", "Visas archyvas"))
 ALL_SPEAKERS = "__visi__"
+
+
+def teach_cmd(path, idx: int, name: str) -> list:
+    """Balso mokymosi iš pataisytos eilutės komanda (.venv: numpy + sherpa-onnx; UI jų neturi)."""
+    return [str(paths.VENV_PY), "-m", "diktatura.speakers.teach", str(path), str(idx), name]
 
 
 @dataclass
@@ -119,6 +129,8 @@ class TextPage(Gtk.Box):
     def __init__(self, win=None, rec_dir=None, auto_refresh=True):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.win = win
+        self._alive = True          # langą uždarius fone likę laikmačiai nebeliečia valdiklių
+        self.connect("destroy", lambda _w: setattr(self, "_alive", False))
         self._rec = Path(rec_dir) if rec_dir else None
         self.sessions = {}          # Path -> Session
         self.order = []             # atvaizduotos sesijos (sena -> nauja)
@@ -539,7 +551,102 @@ class TextPage(Gtk.Box):
         if ln.speaker.startswith(store.UNKNOWN) and len(ln.speaker) > len(store.UNKNOWN):
             pid = ln.speaker[len(store.UNKNOWN):]
             add(f"🎓 Priskirti vardą balsui {pid}…", lambda: self.goto_training(pid))
+        if ln.speaker and ln.ts:
+            sub = Gtk.Menu()
+            for name, text in self.correction_choices(ln):
+                mi = Gtk.MenuItem(label=text)
+                mi.connect("activate", lambda _w, n=name: self.correct_speaker(ln, n))
+                sub.append(mi)
+            other = Gtk.MenuItem(label="✎ Kitas vardas…")
+            other.connect("activate", lambda _w: self._ask_and_correct(ln))
+            sub.append(other)
+            top = Gtk.MenuItem(label=f"✎ Kas kalbėjo? (ne {ln.speaker})")
+            top.set_submenu(sub)
+            items.append(top)
         return items
+
+    # ── kalbėtojo pataisymas ──
+    def correction_choices(self, ln: Line) -> list:
+        """[(vardas, meniu tekstas)]: tu, registruoti ir matomi tekste vardai, nežinomas — be dabartinio."""
+        names = {n for n in store.names()} | {n for n in self.speakers()
+                                              if n != store.ME and not n.startswith(store.UNKNOWN)}
+        out = [(store.ME, "🙋 Tu (aš)")] if ln.speaker != store.ME else []
+        out += [(n, n) for n in sorted(names, key=str.casefold) if n != ln.speaker]
+        if ln.speaker != store.UNKNOWN:
+            out.append((store.UNKNOWN, "Kolega? (nežinomas — nemokyti)"))
+        return out
+
+    def ask_name(self, ln: Line):
+        """Dialogas: kas iš tikro kalbėjo (užbaigimas — registruoti ir tekstuose matomi vardai). -> vardas | None."""
+        dlg = Gtk.MessageDialog(transient_for=self.get_toplevel() if self.win else None, modal=True,
+                                message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.OK_CANCEL,
+                                text=f"Kas sakė: „{ln.text[:60]}“?",
+                                secondary_text="Eilutė bus pataisyta, o balsas išmoktas šiam žmogui.")
+        e = Gtk.Entry()
+        model = Gtk.ListStore(str)
+        for n in sorted(set(store.names()) | store.text_speakers(), key=str.casefold):
+            model.append([n])
+        comp = Gtk.EntryCompletion()
+        comp.set_model(model)
+        comp.set_text_column(0)
+        e.set_completion(comp)
+        e.set_activates_default(True)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        dlg.get_message_area().pack_start(e, False, False, 0)
+        dlg.show_all()
+        resp, name = dlg.run(), e.get_text()
+        dlg.destroy()
+        return name if resp == Gtk.ResponseType.OK and name.strip() else None
+
+    def _ask_and_correct(self, ln: Line) -> None:
+        name = self.ask_name(ln)
+        if not name:
+            return
+        try:
+            new = store.ME if store.is_me(name) else store.clean_name(name)
+        except ValueError as e:
+            self.status.set_text(f"✗ {e}")
+            return
+        self.correct_speaker(ln, new)
+
+    def correct_speaker(self, ln: Line, new: str) -> bool:
+        """Eilutės kalbėtojas -> new; jei new — žmogus (ar tu), jo balsas išmokstamas iš tos eilutės garso."""
+        path = ln.session.path
+        if not store.relabel_line(path, ln.idx, ln.speaker, new):
+            self.status.set_text("⚠ eilutė jau pasikeitė — palauk atnaujinimo ir bandyk dar kartą")
+            return False
+        msg = f"✓ [{ln.ts}] {ln.speaker} → {new}"
+        self.refresh()
+        if new == store.UNKNOWN:
+            self.status.set_text(msg)
+            return True
+        try:
+            p = subprocess.Popen(teach_cmd(path, ln.idx, new), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, cwd=str(paths.REPO), env={**os.environ, "PYTHONPATH": str(paths.REPO)})
+        except OSError as e:
+            self.status.set_text(f"{msg} · balso neišmokau: {e}")
+            return True
+        self.status.set_text(f"{msg} · mokausi balso…")
+        GLib.timeout_add(300, self._poll_teach, p, msg)
+        return True
+
+    def _poll_teach(self, p, msg):
+        if not self._alive:                 # langas uždarytas — mokymasis baigsis pats, rodyti nebėra kur
+            return False
+        if p.poll() is None:
+            return True
+        try:
+            r = json.loads((p.stdout.read() or "").strip().splitlines()[-1])
+        except (ValueError, IndexError, OSError):
+            r = {}
+        if p.returncode == 0:
+            self.status.set_text(f"{msg} · balsas išmoktas ({r.get('channel', '?')} kanalas, "
+                                 f"{r.get('speech_sec', '?')} s kalbos; {r.get('who', '')} pavyzdžių: {r.get('count', '?')})")
+        else:
+            self.status.set_text(f"{msg} · balso neišmokau: {r.get('error') or f'klaida ({p.returncode})'}")
+        if self.win is not None:
+            self.win.training.reload()
+        return False
 
     # ── žymės ──
     def tag_line(self, ln: Line, tag) -> None:
