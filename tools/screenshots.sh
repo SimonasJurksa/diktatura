@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Diktatūra — README nuotraukos (docs/img/{text,training,settings}.png) iš IŠGALVOTŲ demo duomenų.
+# Diktatūra — README nuotraukos (docs/img/{text,training,settings,theme-dark,theme-contrast}.png) iš IŠGALVOTŲ demo duomenų.
 #   bash tools/screenshots.sh
 # Langas piešiamas per broadway (atmintyje) — tavo ekrane nieko neatsiranda; tikri duomenys neliečiami
 # (laikinas DIKTATURA_* katalogas + tools/demo_data.py). Reikia: broadwayd (libgtk-3-bin).
@@ -21,4 +21,12 @@ for page in text training settings; do
   GDK_BACKEND=broadway BROADWAY_DISPLAY=":$D" timeout 30 python3 -m diktatura.ui.app --page "$page" \
     --shot "$REPO/docs/img/$page.png"
   echo "✓ docs/img/$page.png"
+done
+# temos: tamsi (Tekstas) ir didelis kontrastas (Apmokymai) — README „Išvaizda"
+for spec in "dark text" "contrast training"; do
+  set -- $spec
+  python3 -m diktatura.config set "THEME=$1" >/dev/null
+  GDK_BACKEND=broadway BROADWAY_DISPLAY=":$D" timeout 30 python3 -m diktatura.ui.app --page "$2" \
+    --shot "$REPO/docs/img/theme-$1.png"
+  echo "✓ docs/img/theme-$1.png"
 done

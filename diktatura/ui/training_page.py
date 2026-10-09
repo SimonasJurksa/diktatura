@@ -5,8 +5,9 @@ Kai pokalbyje kalba neatpažintas balsas, transkripcija jį pažymi „Kolega?ne
 sakė (kontekstas iš transkripcijų), įrašyti vardą (užbaigimas iš registruotų ir tekstuose matomų) -> balsas
 registruojamas, pending pašalinamas, VISOSE transkripcijose „Kolega?nezN" -> vardas, pereinama prie kito.
 „Ne žmogus / triukšmas" -> pavyzdys ištrinamas ir panašus garsas nebesiūlomas. „🙋 Tai aš" (arba vardas „Tu") -> tai TAVO balsas (pvz. kalbėjai prisijungęs telefonu):
-pavyzdys į owner.json, tekstuose -> „Tu". Apačioje — registruoti balsai: tavo balsas (pamiršti) ir kolegos:
-pervadinti / sujungti (pvz. „Ruta" -> „Rūta") / pamiršti.
+pavyzdys į owner.json, tekstuose -> „Tu". Antras skirtukas — registruoti balsai (per visą aukštį): tavo balsas
+(pamiršti) ir kolegos: pervadinti / sujungti (pvz. „Ruta" -> „Rūta") / pamiršti. Tema (on_theme): kompaktiškoje — be
+įžangos ir siauresnis sąrašas. Įžanga — sutraukiama „ℹ Kaip tai veikia?" (numatytai suskleista).
 
 Duomenų logika — diktatura.speakers.store (tik stdlib). Grojimas — `paplay` (testams DIKTATURA_PLAYER); kol groja,
 VOX neįrašinėja (diktatura.pause), kad perklausa nevirstų nauju „pokalbiu".
@@ -18,7 +19,7 @@ from datetime import datetime
 
 from diktatura import pause, sessions
 from diktatura.speakers import store
-from diktatura.ui.gtk import GLib, Gtk, button, label
+from diktatura.ui.gtk import GLib, Gtk, button, flow, label
 
 INTRO = ("Kai pokalbyje kalba žmogus, kurio balso Diktatūra dar nežino, tekste jis pažymimas "
          "<b>„Kolega?nezN“</b>, o jo balso pavyzdys išsaugomas čia. Paklausyk, perskaityk, ką jis sakė, ir įrašyk "
@@ -55,8 +56,22 @@ class TrainingPage(Gtk.Box):
         for m in ("top", "start", "end"):
             getattr(self, f"set_margin_{m}")(12)
 
-        intro = label(INTRO, css="dk-intro", wrap=True, markup=True)
-        self.pack_start(intro, False, False, 0)
+        # įžanga — sutraukiama (aukštis mažame ekrane brangus); kompaktiškoje temoje paslepiama visai
+        self.intro = Gtk.Expander(label="ℹ Kaip tai veikia?")
+        self.intro.add(label(INTRO, css="dk-intro", wrap=True, markup=True))
+        self.intro.set_expanded(False)
+        self.intro.set_no_show_all(True)        # show_all jos neatidengia (kompaktiškoje temoje)
+        self.intro.get_child().show()
+        self.intro.show()
+        self.pack_start(self.intro, False, False, 0)
+        # du skirtukai: laukiantys vardo / registruoti balsai — kiekvienas per visą aukštį (mažame ekrane
+        # registruotų sąrašas apačioje buvo vos kelių eilučių)
+        self.tabs = Gtk.Stack()
+        self.tabs.set_transition_type(Gtk.StackTransitionType.NONE)
+        switcher = Gtk.StackSwitcher()
+        switcher.set_stack(self.tabs)
+        switcher.set_halign(Gtk.Align.START)
+        self.pack_start(switcher, False, False, 0)
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         # kairė: sąrašas
@@ -67,7 +82,7 @@ class TrainingPage(Gtk.Box):
         self.list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.list.set_placeholder(label("✓ Nežinomų balsų nėra —\nvisi priskirti.", xalign=0.5, css="dk-help"))
         self.list.connect("row-selected", self._on_row)
-        lsw = Gtk.ScrolledWindow()
+        lsw = self.lsw = Gtk.ScrolledWindow()
         lsw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         lsw.set_size_request(260, -1)
         lsw.add(self.list)
@@ -95,9 +110,9 @@ class TrainingPage(Gtk.Box):
         self.ctx.set_wrap_mode(Gtk.WrapMode.WORD)
         self.ctx.set_left_margin(6)
         self.ctx.set_monospace(True)
-        csw = Gtk.ScrolledWindow()
+        csw = self.csw = Gtk.ScrolledWindow()
         csw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        csw.set_min_content_height(140)
+        csw.set_min_content_height(90)
         csw.add(self.ctx)
         self.detail.pack_start(csw, True, True, 0)
 
@@ -119,36 +134,50 @@ class TrainingPage(Gtk.Box):
         nrow.pack_start(self.btn_assign, False, False, 0)
         self.detail.pack_start(nrow, False, False, 0)
 
-        arow = Gtk.Box(spacing=6)
-        arow.pack_start(button("◀ Ankstesnis", lambda: self.move(-1)), False, False, 0)
-        arow.pack_start(button("Kitas ▶", lambda: self.move(1)), False, False, 0)
-        arow.pack_start(button("⏭ Praleisti", self.skip, "Palikti vėlesniam laikui — nieko nekeičia"), False, False, 0)
-        arow.pack_start(button("🙋 Tai aš", self.its_me,
-                               "Tai TAVO balsas (pvz. kalbėjai prisijungęs telefonu): tekstuose bus „Tu“"), False, False, 0)
-        arow.pack_start(button("🗑 Ne žmogus / triukšmas", self.not_human,
-                               "Ištrinti pavyzdį; panašus garsas nebebus siūlomas"), False, False, 0)
-        arow.pack_end(button("📄 Grįžti į tekstą", lambda: self.win and self.win.show_page("text")), False, False, 0)
+        arow = flow(button("◀ Ankstesnis", lambda: self.move(-1)), button("Kitas ▶", lambda: self.move(1)),
+                    button("⏭ Praleisti", self.skip, "Palikti vėlesniam laikui — nieko nekeičia"),
+                    button("🙋 Tai aš", self.its_me,
+                           "Tai TAVO balsas (pvz. kalbėjai prisijungęs telefonu): tekstuose bus „Tu“"),
+                    button("🗑 Ne žmogus / triukšmas", self.not_human,
+                           "Ištrinti pavyzdį; panašus garsas nebebus siūlomas"),
+                    button("📄 Grįžti į tekstą", lambda: self.win and self.win.show_page("text")))
         self.detail.pack_start(arow, False, False, 0)
         self.msg = label("", wrap=True)
         self.detail.pack_start(self.msg, False, False, 0)
         paned.pack2(self.detail, True, False)
-        self.pack_start(paned, True, True, 0)
+        self.pending_page = paned
+        self.tabs.add_titled(paned, "pending", "🔎 Laukia vardo")
 
-        # registruoti balsai
-        self.exp = Gtk.Expander()
+        # registruoti balsai — atskiras skirtukas
+        kbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        kbox.pack_start(label("Pervadinti, sujungti (įvedus jau esantį vardą, pvz. „Ruta“ → „Rūta“) arba pamiršti. "
+                              "Tavo balsas — viršuje.", css="dk-help", wrap=True), False, False, 0)
+        self.known_warn = label("", css="dk-error", wrap=True)
+        self.known_warn.set_no_show_all(True)
+        kbox.pack_start(self.known_warn, False, False, 0)
         self.known = Gtk.ListBox()
         self.known.set_selection_mode(Gtk.SelectionMode.NONE)
         ksw = Gtk.ScrolledWindow()
         ksw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        ksw.set_min_content_height(120)
         ksw.add(self.known)
-        self.exp.add(ksw)
-        self.pack_start(self.exp, False, False, 0)
+        kbox.pack_start(ksw, True, True, 0)
+        self.known_page = kbox
+        self.tabs.add_titled(kbox, "known", "👥 Registruoti balsai")
+        self.pack_start(self.tabs, True, True, 0)
 
         self.reload()
         if auto_refresh:
             GLib.timeout_add_seconds(POLL_SEC, self._tick)
             GLib.timeout_add(300, self._poll_player)
+
+    def tab_title(self, name: str) -> str:
+        return self.tabs.child_get_property(self.tabs.get_child_by_name(name), "title")
+
+    def on_theme(self, theme) -> None:
+        """Kompaktiška tema (mažas ekranas): be įžangos, siauresnis sąrašas, žemesnis kontekstas."""
+        self.intro.set_visible(not theme.compact)
+        self.lsw.set_size_request(170 if theme.compact else 260, -1)
+        self.csw.set_min_content_height(60 if theme.compact else 90)
 
     # ── duomenys ──
     def reload(self, keep_index=None) -> None:
@@ -175,6 +204,7 @@ class TrainingPage(Gtk.Box):
             self.list.add(row)
         self.list.show_all()
         self.lbl_count.set_text(f"Laukia vardo: {len(self.voices)}")
+        self.tabs.child_set_property(self.pending_page, "title", f"🔎 Laukia vardo ({len(self.voices)})")
         self._fill_names()
         self._reload_known()
         if not self.voices:
@@ -246,9 +276,10 @@ class TrainingPage(Gtk.Box):
         for r in self.known.get_children():
             self.known.remove(r)
         counts = store.counts()
-        self.exp.set_label(f"Registruoti balsai ({len(counts)}) — pervadinti, sujungti, pamiršti"
-                           + ("" if store.compatible() else
-                              "  ⚠ senas balso modelis — neatpažįstami; paleisk: make speakers-migrate"))
+        self.tabs.child_set_property(self.known_page, "title", f"👥 Registruoti balsai ({len(counts)})")
+        self.known_warn.set_text("" if store.compatible() else
+                                 "⚠ Senas balso modelis — balsai neatpažįstami; paleisk: make speakers-migrate")
+        self.known_warn.set_visible(not store.compatible())
         own = store.owner_count()
         row = Gtk.Box(spacing=8)
         for m in ("top", "bottom", "start", "end"):

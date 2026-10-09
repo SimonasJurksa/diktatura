@@ -34,6 +34,14 @@ vardų atpažinimas lieka, nebent pažymėsi) — abu tik patvirtinus:
 
 ![Nustatymai](docs/img/settings.png)
 
+**🎨 Temos** (Nustatymai → Išvaizda): šviesi (kaip sistemoje), tamsi, **didelis kontrastas ir šriftas** (silpnaregiams)
+ir **kompaktiška** (mažam ekranui — mažesnis šriftas, be įžangų). Langą galima sumažinti iki ~670×320, mygtukų
+juostos persikelia į kelias eilutes, o kas netelpa — slenkama:
+
+| Tamsi | Didelis kontrastas |
+|---|---|
+| ![Tamsi tema](docs/img/theme-dark.png) | ![Didelio kontrasto tema](docs/img/theme-contrast.png) |
+
 **Status bar ikona** rodo, kas vyksta — pilka budi, raudona įrašo, geltona apdoroja; pulsuoja, kai laukia
 nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik — iškart Nustatymai:
 

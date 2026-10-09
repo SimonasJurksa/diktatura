@@ -3,7 +3,8 @@
 Laukai generuojami iš config.SCHEMA (grupės, tipai, ribos, lietuviški paaiškinimai) — naujas nustatymas schemoje
 automatiškai atsiranda ir čia. Viršuje — įrašymo režimas (VOX / Slack / išjungta; systemd per diktatura.services).
 „Išsaugoti": validacija (klaida rodoma prie lauko, failas nekeičiamas) -> config.save (atominis rašymas).
-Daemon'ai nustatymus perskaito patys (VOX kas ~5 s, Slack kiekvieną ciklą) — restarto nereikia.
+Daemon'ai nustatymus perskaito patys (VOX kas ~5 s, Slack kiekvieną ciklą) — restarto nereikia. Pakeista tema
+(THEME, grupė „Išvaizda") pritaikoma visam langui iškart išsaugojus (MainWindow.apply_theme, diktatura.ui.themes).
 Apačioje, toli nuo „Išsaugoti" — „Atstatymas ir duomenys": „Atkurti numatytus nustatymus…" (patvirtinimas su
 pasikeisiančių nustatymų sąrašu -> config/diktatura.conf.default) ir „Ištrinti įrašus ir tekstus…" (patvirtinimas su
 pasirinkimais: įrašai ir tekstai / laukiantys vardo balsai / vardų atpažinimas — diktatura.reset). Abiejuose
@@ -98,7 +99,7 @@ class SettingsPage(Gtk.Box):
         for s in settings:
             w = self._widget(s)
             self.widgets[s.key] = w
-            name = label(s.label)
+            name = label(s.label, wrap=True)        # siaurame lange (mažas ekranas, didelis šriftas) — per kelias eilutes
             name.set_tooltip_text(s.key)
             name.set_hexpand(True)
             grid.attach(name, 0, row, 1, 1)
@@ -224,6 +225,9 @@ class SettingsPage(Gtk.Box):
             self.set_msg(f"✗ Neišsaugota: {e}", "dk-error")
             return False
         notes = ["✓ Išsaugota — taikoma be restarto"]
+        if vals.get("THEME") != getattr(self, "saved", {}).get("THEME") and self.win is not None:
+            self.win.apply_theme(vals.get("THEME"))
+            notes.append(f"tema: {config.BY_KEY['THEME'].choice_label(vals.get('THEME'))}")
         if vals.get("ASR_SERVER") != getattr(self, "saved", {}).get("ASR_SERVER"):
             ok, m = services.set_asr_server(vals.get("ASR_SERVER") == "1")
             notes.append(m if ok else f"⚠ {m}")
@@ -284,6 +288,8 @@ class SettingsPage(Gtk.Box):
     def reset_to_defaults(self) -> None:
         config.reset()
         self.load()
+        if self.win is not None:
+            self.win.apply_theme()
         self.set_msg("✓ Atkurti numatytieji nustatymai", "dk-ok")
 
     def wipe_dialog(self):

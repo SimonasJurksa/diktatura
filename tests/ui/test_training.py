@@ -59,7 +59,7 @@ def test_i5_list_context_and_completion(win):
     ctx = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), True)
     assert "kada diegimas?" in ctx and "dar kartą" in ctx and "girdžiu" not in ctx   # tik šio balso eilutės
     assert [r[0] for r in tp.names_model] == ["Ona", "Ruta", "Rūta"]                 # autocomplete iš esamų vardų
-    assert "Registruoti balsai (3)" in tp.exp.get_label()
+    assert "Registruoti balsai (3)" in tp.tab_title("known") and tp.tab_title("pending") == "🔎 Laukia vardo (2)"
 
 
 def test_i5_navigation_and_skip(win):
@@ -136,7 +136,7 @@ def test_rename_merge_and_forget_known_voice(win, demo):
     assert n == 1 and store.counts()["Rūta"] == 2 and "Ruta" not in store.counts()
     assert "Rūta: iki" in win.text.text()
     tp.forget("Ona")
-    assert "Ona" not in store.counts() and "Registruoti balsai (1)" in tp.exp.get_label()
+    assert "Ona" not in store.counts() and "Registruoti balsai (1)" in tp.tab_title("known")
 
 
 def test_playback_pauses_recording_and_releases(win):

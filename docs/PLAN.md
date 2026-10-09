@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅**
 
 ---
 
@@ -310,6 +310,22 @@ numatytus — ne taip arti Išsaugoti ir su patvirtinimu".
 
 ---
 
+## Etapas 10 — Temos ir mažas ekranas ✅ (2026-10-09)
+
+Savininkas: „dark tema + kelios temos skirtingiems poreikiams (regos negalia, ypač mažas ekranas); Apmokymuose
+registruoti balsai apačioje vos matosi — vertikaliai siaura".
+- **Temos** (`THEME`, Nustatymai → Išvaizda, `diktatura/ui/themes.py`): šviesi, tamsi, didelis kontrastas ir šriftas
+  (HighContrast, ×1.4, fokuso rėmelis, nepritemdytas pagalbinis tekstas), kompaktiška (×0.85, be įžangų).
+  Taikoma iškart išsaugojus; teksto lango kalbėtojų spalvos — pagal temą.
+- **Apmokymai:** „Registruoti balsai" — atskiras skirtukas per visą aukštį; įžanga — sutraukiama „ℹ Kaip tai veikia?".
+- **Mažas ekranas** (matuota): mažiausias langas 1127×733 → 667×319 (šviesi), 621×313 (kompaktiška), 849×319
+  (kontrastas). Priemonės: juostos persikelia (`WrapBox`), skiltys slenkamos, nustatymų pavadinimai laužomi.
+- Rasta pakeliui: PyGObject savo konteineris be Python nuorodos — amžinas ciklas naikinant (pataisyta, testas O7);
+  `Gtk.FlowBox` atmestas (stulpeliai, spragos).
+- Testai: `tests/ui/test_themes.py` (O1–O7), README nuotraukos (`theme-dark.png`, `theme-contrast.png`).
+
+---
+
 ## ❓ Nauji klausimai (su mano rekomendacija)
 
 - ❓ **Q1 — Kur laikyti duomenis po pervadinimo?**
@@ -496,6 +512,17 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | E8  | įrašas ištrintas laukiant eilėje                     | „PRALEISTA", kodas 0, ASR nekviečiamas                    |
 | UI  | mygtukai toli nuo „Išsaugoti"; atšaukti / patvirtinti | Atšaukti — nieko; patvirtinus — atlikta; numatytai pažymėti tik įrašai |
 
+### O. Temos ir mažas ekranas ✅ — `tests/ui/test_themes.py`
+
+| #   | Atvejis                                             | Tikimasi                                                      |
+| --- | --------------------------------------------------- | ------------------------------------------------------------- |
+| O1  | kiekviena tema; grįžimas į šviesią                  | GTK tema / tamsus variantas / šrifto mastelis; atstatoma      |
+| O2  | kalbėtojų spalvos tekste                            | pagal temos paletę (tamsi — šviesesnės, kontrastas — juoda)   |
+| O3  | kompaktiška tema Apmokymuose                        | be įžangos, siauresnis sąrašas; show_all įžangos neatidengia  |
+| O4–O5 | išsaugojus / naujas langas                        | tema pritaikoma iškart / iš nustatymų                         |
+| O6  | Apmokymų skirtukai                                  | „Laukia vardo (N)" / „Registruoti balsai (M)"                 |
+| O7  | `WrapBox`                                           | persikelia kaip tekstas; naikinimas be Python nuorodos neužstringa |
+
 ### Nustatymų pakeitimų matrica (ar kiekvienas nustatymas tikrai veikia)
 
 | Nustatymas                             | Ką turi pakeisti                    | Testai         |
@@ -513,6 +540,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | VAD min kalba / paddingas              | praleidimas / trim                  | H1–H6          |
 | vardo slenkstis / atsarga              | vardas ↔ `Kolega?` (griežtumas)     | G6, G10        |
 | kolegų garso šalinimas (mikrofone)     | L be R kopijos / kaip anksčiau      | L5             |
+| tema                                   | lango išvaizda, šriftas, spalvos    | O1–O5          |
 | debug                                  | `debug.log` pildosi                 | `test_debug_doctor.py` |
 
 ### Rankinis GUI checklist (prieš push)

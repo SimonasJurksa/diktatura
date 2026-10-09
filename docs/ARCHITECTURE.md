@@ -147,7 +147,17 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   `assigned.json`, DABAR rašomo (`<runtime>/recording`) ir DABAR transkribuojamo / archyvuojamo įrašo (pagal
   `pgrep` argumentus) — kitaip transkripcija po valymo „atgaivintų" seną tekstą. Eilėje laukę ištrinti įrašai
   praleidžiami (`transcribe-file.sh`: „PRALEISTA").
-- `ui.gtk`: GTK versijos ir bendras CSS vienoje vietoje. UI moduliuose — jokio numpy/faster-whisper.
+- `ui.gtk`: GTK versijos ir bendras CSS vienoje vietoje; `WrapBox` / `flow()` — mygtukų juosta, kuri siaurame lange
+  persikelia kaip tekstas (Gtk.FlowBox netiko — dėlioja stulpeliais). UI moduliuose — jokio numpy/faster-whisper.
+- `ui.themes` (Nustatymai → Išvaizda → `THEME`): light (kaip sistemoje) / dark (sistemos temos tamsus variantas) /
+  contrast (GTK „HighContrast", šriftas ×1.4, storas fokuso rėmelis, pagalbinis tekstas nepritemdytas) / compact
+  (šriftas ×0.85, mažesni mygtukai, Apmokymuose be įžangos). `themes.apply()` keičia `Gtk.Settings` tik šiam procesui
+  (gtk-theme-name, prefer-dark, gtk-xft-dpi) + temos CSS; `MainWindow.apply_theme()` — paleidžiant ir išsaugojus;
+  skiltys persidažo per `on_theme()` (teksto lango kalbėtojų spalvos — tamsiame fone šviesesnės, kontraste sočios).
+- **Mažas ekranas:** kiekviena skiltis — vertikaliai slenkamoje srityje (`MIN_PAGE_HEIGHT`): GTK3 langą leidžia
+  sumažinti tik iki aukščio, kurio reikėtų siauriausiam langui (buvo ≥ 733 px), dabar ~320 px. Mažiausias plotis
+  ~670 px (buvo 1127): juostos — `flow()`, nustatymų pavadinimai laužomi, teksto būsena sutrumpinama (…).
+  Apmokymuose — du skirtukai „🔎 Laukia vardo (N)" / „👥 Registruoti balsai (M)" (per visą aukštį), įžanga sutraukiama.
 
 ### Valdymas / konfigūracija
 - `Makefile` — visos komandos (`make help`). Keliai jame išvedami taip pat kaip `paths.py` (XDG + `DIKTATURA_*`).
@@ -257,6 +267,9 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
   de-dup turi 2 s atsargą, aido šalinimas poslinkį skaičiuoja pats.
 - **`pending/.next` po `flock`:** nežinomus balsus vienu metu gali kurti transkripcija ir `make speakers-relabel`.
 - **Testų LT fixture'ai — vienas kalbėtojas** (Common Voice klipai) — „skirtingų žmonių" testams netinka.
+- **PyGObject + savas Gtk.Container (`WrapBox`):** jei Python nuorodos į objektą nėra, jo Python dalis (`_children`)
+  dingsta — GTK naikindamas langą sukosi be galo (testai „pakibdavo"). Todėl `WrapBox._live` laiko objektus iki
+  `do_destroy`. Taip pat `Gtk.Viewport` savo vaiko nesunaikina — `MainWindow._on_destroy` skiltis naikina aiškiai.
 - **GTK laikmačiai po lango uždarymo:** `GLib.timeout_add` gyvena ilgiau už langą — sunaikintų valdiklių lietimas =
   segfault (pagauta UI testuose: „✎ Kas kalbėjo?" mokymosi laikmatis). Laikmačio callback'ai tikrina `self._alive`.
 

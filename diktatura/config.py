@@ -37,6 +37,14 @@ class Setting:
 
 
 SCHEMA = (
+    # ── Išvaizda ──
+    Setting("THEME", "choice", "Išvaizda", "Tema",
+            "Šviesi — kaip sistemoje; Tamsi — tamsus fonas (vakarui, akims); Didelis kontrastas — juoda ant baltos, "
+            "didesnis šriftas, ryškūs rėmeliai (silpnaregiams); Kompaktiška — mažesnis šriftas ir tarpai, "
+            "Apmokymuose be įžangos (mažam ekranui). Taikoma iškart išsaugojus.",
+            choices=("light", "dark", "contrast", "compact"),
+            choice_labels=("Šviesi (kaip sistemoje)", "Tamsi", "Didelis kontrastas ir šriftas",
+                           "Kompaktiška (mažam ekranui)")),
     # ── Įrašymas ──
     Setting("VOX_SILENCE_SEC", "float", "Įrašymas", "Tylos sekundės iki failo uždarymo",
             "Kiek sekundžių tylos reikia, kad VOX užbaigtų įrašą. Diktavimui ~5, pokalbiams 30–60.", 1, 600),

@@ -3,6 +3,10 @@
 # Formatas: KEY=VALUE (be tarpų ir kabučių). Komentarai — TIK atskiroje eilutėje.
 # Skaito: bash (bin/common.sh, per `.`) ir python (diktatura/config.py) — gyvai, kiekvieną kartą.
 
+# ── Išvaizda ──
+# lango tema: light (kaip sistemoje), dark (tamsi), contrast (didelis kontrastas ir šriftas), compact (mažam ekranui)
+THEME=light
+
 # ── Įrašymas ──
 # VOX: kiek sekundžių tylos uždaro įrašo failą
 VOX_SILENCE_SEC=5

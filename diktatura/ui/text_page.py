@@ -23,12 +23,12 @@ from pathlib import Path
 
 from diktatura import annotations, config, pause, paths, sessions, stats
 from diktatura.speakers import store
-from diktatura.ui.gtk import Gdk, GLib, Gtk, Pango, button, label
+from diktatura.ui.gtk import Gdk, GLib, Gtk, Pango, button, flow, group, label
 from diktatura.ui.player import SeekPlayer
+from diktatura.ui.themes import LIGHT_PALETTE
 
 # Spalvos kalbėtojams (tinka šviesiai ir tamsiai temai); priskiriamos pagal pasirodymą
-PALETTE = ["#1a73e8", "#188038", "#d93025", "#9334e6", "#e37400",
-           "#00897b", "#c5221f", "#7cb342", "#6d4c41"]
+PALETTE = list(LIGHT_PALETTE)      # tema (on_theme) pakeičia
 REFRESH_SEC = 2
 PERIODS = (("keep", None), ("today", "Šiandien"), ("yesterday", "Vakar"), ("7", "Pask. 7 d."),
            ("30", "Pask. 30 d."), ("all", "Visas archyvas"))
@@ -164,34 +164,31 @@ class TextPage(Gtk.Box):
         tb.pack_start(button("▶", lambda: self.goto_match(1), "Kitas (Enter)"), False, False, 0)
         self.lbl_match = label("")
         tb.pack_start(self.lbl_match, False, False, 6)
-        tb.pack_start(button("Kopijuoti viską", self.copy_all), False, False, 0)
-        self.cb_auto = Gtk.CheckButton(label="Sekti naujus")
-        self.cb_auto.set_active(True)
-        self.cb_auto.connect("toggled", lambda w: setattr(self, "autoscroll", w.get_active()))
-        tb.pack_start(self.cb_auto, False, False, 0)
         self.pack_start(tb, False, False, 0)
 
-        # 2 eilutė: filtrai ir veiksmai
-        fb = self._row(top=0)
-        fb.pack_start(label("Kalbėtojas:"), False, False, 0)
+        # 2 eilutė: filtrai ir veiksmai — siaurame lange persikelia į kelias eilutes (flow)
         self.cmb_speaker = Gtk.ComboBoxText()
         self.cmb_speaker.connect("changed", self._on_speaker)
-        fb.pack_start(self.cmb_speaker, False, False, 0)
-        fb.pack_start(label("Laikotarpis:"), False, False, 6)
         self.cmb_period = Gtk.ComboBoxText()
         for pid, title in PERIODS:
             self.cmb_period.append(pid, title or f"Pask. {self.days} d. (nustatymas)")
         self.cmb_period.set_active_id("keep")
         self.cmb_period.connect("changed", self._on_period)
-        fb.pack_start(self.cmb_period, False, False, 0)
         self.cb_tagged = Gtk.CheckButton(label="Tik žymėtos ⭐☐")
         self.cb_tagged.connect("toggled", self._on_tagged)
-        fb.pack_start(self.cb_tagged, False, False, 6)
         self.btn_stop = button("⏹ Stabdyti grojimą", self.stop_playback)
         self.btn_stop.set_no_show_all(True)
-        fb.pack_start(self.btn_stop, False, False, 0)
-        fb.pack_end(button("💾 Eksportuoti…", self.on_export, "Išsaugoti matomą tekstą (.txt arba .md)"), False, False, 0)
-        fb.pack_end(button("📊 Statistika", self.on_stats, "Kas kiek kalbėjo (matomose sesijose)"), False, False, 0)
+        self.cb_auto = Gtk.CheckButton(label="Sekti naujus")
+        self.cb_auto.set_active(True)
+        self.cb_auto.connect("toggled", lambda w: setattr(self, "autoscroll", w.get_active()))
+        fb = flow(group(label("Kalbėtojas:"), self.cmb_speaker), group(label("Laikotarpis:"), self.cmb_period),
+                  self.cb_tagged, self.btn_stop,
+                  button("📊 Statistika", self.on_stats, "Kas kiek kalbėjo (matomose sesijose)"),
+                  button("💾 Eksportuoti…", self.on_export, "Išsaugoti matomą tekstą (.txt arba .md)"),
+                  button("Kopijuoti viską", self.copy_all), self.cb_auto)
+        for m in ("start", "end"):
+            getattr(fb, f"set_margin_{m}")(8)
+        fb.set_margin_bottom(4)
         self.pack_start(fb, False, False, 0)
 
         self.sw = Gtk.ScrolledWindow()
@@ -215,6 +212,7 @@ class TextPage(Gtk.Box):
         self.pack_start(self.sw, True, True, 0)
 
         self.status = label("Kraunu…")
+        self.status.set_ellipsize(Pango.EllipsizeMode.END)       # siauras langas — būsena sutrumpinama, ne platina
         self.status.set_margin_start(8)
         self.status.set_margin_bottom(4)
         self.pack_start(self.status, False, False, 0)
@@ -397,7 +395,8 @@ class TextPage(Gtk.Box):
 
     def spk_tag(self, name: str):
         if name not in self.spk_tags:
-            color = PALETTE[len(self.spk_tags) % len(PALETTE)]
+            pal = getattr(self, "palette", PALETTE)
+            color = pal[len(self.spk_tags) % len(pal)]
             self.spk_tags[name] = self.buf.create_tag(None, foreground=color, weight=Pango.Weight.BOLD)
         return self.spk_tags[name]
 
@@ -526,6 +525,15 @@ class TextPage(Gtk.Box):
         for it in self.menu_items(ln):
             menu.append(it)
         menu.show_all()
+
+    def on_theme(self, theme) -> None:
+        """Tema pasikeitė: teksto žymų ir kalbėtojų spalvos (tamsiame fone — šviesesnės, kontraste — sočios)."""
+        self.palette = list(theme.palette)
+        self.t_sep.props.foreground = theme.text["sep"]
+        self.t_time.props.foreground = theme.text["time"]
+        self.t_mark.props.foreground = theme.text["mark"]
+        for i, tag in enumerate(self.spk_tags.values()):
+            tag.props.foreground = self.palette[i % len(self.palette)]
 
     def menu_items(self, ln: Line) -> list:
         """Kontekstinio meniu punktai eilutei (atskirai — testuojama)."""

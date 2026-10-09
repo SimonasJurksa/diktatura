@@ -9,6 +9,8 @@ import argparse
 import os
 import sys
 
+from diktatura import config
+from diktatura.ui import themes
 from diktatura.ui.gtk import Gdk, Gio, GLib, Gtk, install_css
 from diktatura.ui.settings_page import SettingsPage
 from diktatura.ui.text_page import TextPage
@@ -16,6 +18,7 @@ from diktatura.ui.training_page import TrainingPage
 
 APP_ID = "lt.diktatura.Diktatura"
 PAGES = (("text", "📄 Tekstas"), ("training", "🎓 Apmokymai"), ("settings", "⚙ Nustatymai"))
+MIN_PAGE_HEIGHT = 220          # mažiausias skilties aukštis (px) — toliau slenkama
 
 
 class MainWindow(Gtk.ApplicationWindow):
@@ -34,7 +37,15 @@ class MainWindow(Gtk.ApplicationWindow):
         self.settings = SettingsPage(self)
         self.pages = {"text": self.text, "training": self.training, "settings": self.settings}
         for name, title in PAGES:
-            self.stack.add_titled(self.pages[name], name, title)
+            # Kiekviena skiltis — vertikaliai slenkamoje srityje: GTK3 langą leidžia sumažinti tik iki aukščio, kurio
+            # reikėtų siauriausiam langui (persikeliančios mygtukų eilės) — mažame ekrane langas netilpdavo.
+            # Kai vietos pakanka, skiltis užpildo visą aukštį (Viewport), kai ne — atsiranda slinkties juosta.
+            sw = Gtk.ScrolledWindow()
+            sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            sw.set_min_content_height(MIN_PAGE_HEIGHT)
+            sw.add(self.pages[name])
+            sw.get_child().set_shadow_type(Gtk.ShadowType.NONE)
+            self.stack.add_titled(sw, name, title)
 
         hb = Gtk.HeaderBar()
         hb.set_show_close_button(True)
@@ -52,7 +63,26 @@ class MainWindow(Gtk.ApplicationWindow):
         self.current = "text"
         self.stack.connect("notify::visible-child-name", self._on_page)
         self.connect("key-press-event", self._on_key)
-        self.connect("destroy", lambda _w: self.stop_audio())
+        self.connect("destroy", lambda _w: self._on_destroy())
+        self.apply_theme()
+
+    def apply_theme(self, name=None) -> "themes.Theme":
+        """Tema iš nustatymų (THEME) visam langui; skiltys persidažo (kalbėtojų spalvos, kompaktiškas išdėstymas)."""
+        if name is None:
+            try:
+                name = config.load()["THEME"]
+            except (OSError, ValueError, KeyError):
+                name = "light"
+        self.theme = themes.apply(name)
+        for page in self.pages.values():
+            if hasattr(page, "on_theme"):
+                page.on_theme(self.theme)
+        return self.theme
+
+    def _on_destroy(self) -> None:
+        self.stop_audio()
+        for page in self.pages.values():          # Viewport savo vaiko nesunaikina — aiškiai (laikmačiai tikrina _alive)
+            page.destroy()
 
     def stop_audio(self) -> None:
         """Uždarant langą — sustabdyti grojimą (kitaip garsas skambėtų toliau, o įrašymo pauzė baigtųsi)."""
