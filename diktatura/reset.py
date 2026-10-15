@@ -2,6 +2,7 @@
 
 Kategorijos (renkasi vartotojas):
   RECORDINGS — įrašai ir tekstai: viskas <duomenys>/recordings/ (garsas, transkripcijos, .srt, .skip, bench/…),
+               sekamų aplankų tekstai (<duomenys>/sources/ — TAVO garso failai tuose aplankuose nepaliečiami),
                žymės ⭐/☐ (annotations.json), statistikos nunulinimas (stats_reset.json), backup/ (tekstų kopijos).
   PENDING    — nežinomi balsai, laukiantys vardo (speakers/pending/nez*.wav|json). pending/.next lieka — nezN numeriai
                nekartojami.
@@ -53,6 +54,24 @@ def running_transcriptions() -> list:
     return found
 
 
+def running_sources() -> list:
+    """Dabar transkribuojami sekamų aplankų failai (bet koks garso formatas) — jų tekstų netrinti."""
+    try:
+        out = subprocess.run(["pgrep", "-af", r"diktatura\.asr\.transcribe"], capture_output=True, text=True,
+                             timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    found = []
+    for ln in out.splitlines():
+        if "--source" in ln.split():
+            for arg in ln.split()[1:]:
+                if arg.startswith("/") and Path(arg).suffix.lower() in (".m4a", ".mp3", ".wav", ".ogg", ".oga",
+                                                                        ".opus", ".flac", ".aac", ".amr", ".3gp",
+                                                                        ".wma", ".webm"):
+                    found.append(arg)
+    return found
+
+
 def busy_bases() -> set:
     """Įrašų „bazės" (vox_YYYYMMDD_HHMMSS), kurių liesti negalima: rašomas ir transkribuojamas."""
     out = set()
@@ -78,10 +97,21 @@ def plan(busy=None) -> dict:
                 kept.append(p)
                 continue
             rec.targets.append(p)
+    busy_src = {Path(a).resolve() for a in running_sources()}
+    if paths.SOURCES_DATA.exists():                  # sekamų aplankų tekstai (ne garsas — jis vartotojo aplanke)
+        for p in sorted(paths.SOURCES_DATA.rglob("*")):
+            if not p.is_file():
+                continue
+            audio = sessions.source_meta(p).get("audio")
+            if audio and Path(audio).resolve() in busy_src:
+                kept.append(p)
+                continue
+            rec.targets.append(p)
     for p in (paths.DATA_DIR / "annotations.json", paths.DATA_DIR / "stats_reset.json", paths.DATA_DIR / "backup"):
         if p.exists():
             rec.targets.append(p)
-    rec.count = sum(1 for p in rec.targets if p.parent == paths.RECORDINGS and p.is_file())
+    rec.count = sum(1 for p in rec.targets if p.is_file() and (
+        p.parent == paths.RECORDINGS or paths.SOURCES_DATA in p.parents))
     if paths.PENDING.exists():
         pend = res[PENDING]
         pend.targets = sorted(p for p in paths.PENDING.glob("nez*") if p.suffix in (".wav", ".json"))

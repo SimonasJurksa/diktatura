@@ -5,9 +5,10 @@ Aprašo DABARTINĮ funkcionalumą techniniu lygiu (ne istoriją). Darbo žurnala
 
 ## 1. Ką daro (santrauka)
 
-Lokalus, privatus balso-į-tekstą Linux'ui. Du įrašymo šaltiniai → transkripcija (lietuviškai,
-Ąžuolas) → kalbėtojų atpažinimas vardais → langas „Diktatūra" (gyvas tekstas · balsų apmokymai · nustatymai)
-+ status bar ikona. Viskas vietoje.
+Lokalus, privatus balso-į-tekstą Linux'ui. Du įrašymo šaltiniai (+ sekami aplankai: telefonas, laikrodis…) →
+transkripcija (lietuviškai, Ąžuolas) → kalbėtojų atpažinimas vardais → langas „Diktatūra" (gyvas tekstas su garso
+banga · balsų apmokymai · nustatymai) + status bar ikona + įrašymo indikatorius. Viskas vietoje; pasirinktinai —
+MCP serveris AI klientui (tik skaito).
 
 ## 2. Komponentai ir duomenų srautas
 
@@ -17,9 +18,11 @@ Lokalus, privatus balso-į-tekstą Linux'ui. Du įrašymo šaltiniai → transkr
 bin/autorecord.sh   (Slack)  ─┐                                               diktatura.ui.tray (⚪/🔴/🟡)
 diktatura.audio.vox (VOX)    ─┼─> *.wav ─> bin/transcribe-file.sh ─┬─> *.named.txt ─> diktatura.ui.app (📄 Tekstas)
 bin/rec-toggle.sh   (ranka)  ─┘             (flock eilė, 1x1)      ├─ stereo -> diktatura.asr.transcribe_named
-                                                                   └─ mono   -> diktatura.asr.transcribe
+sekami aplankai (telefonas…) ─> transcribe-file.sh <garsas> <bazė> ├─ mono   -> diktatura.asr.transcribe
+  (diktatura.sources; garsas lieka tavo aplanke)                    └─ aplankas -> transcribe_named --source
+                                     -> <bazė>.peaks (🌊, diktatura.waveform) — PRIEŠ transkripciją
                                      nežinomas balsas -> speakers/pending/ ──> diktatura.ui.app (🎓 Apmokymai)
-$XDG_RUNTIME_DIR/diktatura/recording  (būsenos failas „<šaltinis> <kelias>"; yra = rašoma)
+$XDG_RUNTIME_DIR/diktatura/recording  (būsenos failas „<šaltinis> <kelias>"; yra = rašoma; 💊 ui.pill skaito wav galą)
 ```
 
 ### Kur kas gyvena (kodas ≠ duomenys)
@@ -31,12 +34,14 @@ Visi keliai apibrėžti **vienoje vietoje**: `diktatura/paths.py` (Python, tik s
 | Kas | Kelias | Env perrašymas |
 |---|---|---|
 | Nustatymai | `~/.config/diktatura/diktatura.conf` (numatytieji: `config/diktatura.conf.default`) | `DIKTATURA_CONFIG_DIR` |
-| Įrašai, tekstai | `~/.local/share/diktatura/recordings/` | `DIKTATURA_DATA` (visai duomenų šakniai) |
+| Įrašai, tekstai | `~/.local/share/diktatura/recordings/` (+ `<bazė>.peaks` — 🌊 banga, `<tekstas>.prev` — prieš „🔁 iš naujo") | `DIKTATURA_DATA` (visai duomenų šakniai) |
+| Sekamų aplankų tekstai | `~/.local/share/diktatura/sources/<id>/<failas>.{named.txt,peaks,src.json,skip}` (garsas — tavo aplanke) | ↑ |
+| Sekami aplankai | `~/.config/diktatura/sources.json` | `DIKTATURA_CONFIG_DIR` |
 | Balsai | `~/.local/share/diktatura/speakers/{enroll.json,owner.json,pending/,ignored.json,assigned.json}` | ↑ |
 | Žymės (⭐/☐), statistikos nunulinimas | `~/.local/share/diktatura/{annotations,stats_reset}.json` | ↑ |
 | Modeliai | `~/.local/share/diktatura/models/{azuolas-ct2,diarization,hf}` | ↑ |
-| Logai | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log` | `DIKTATURA_STATE` |
-| Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,rec-toggle.pid,asr.sock,pause}` | `DIKTATURA_RUN` |
+| Logai, transkripcijų trukmės (prognozei) | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log`, `timing.json` | `DIKTATURA_STATE` |
+| Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,rec-toggle.pid,asr.sock,pause,progress/}` | `DIKTATURA_RUN` |
 
 Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duomenys nepaliečiami.
 
@@ -44,19 +49,61 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
 - **`bin/transcribe-file.sh`** — centrinis „analizatorius": `flock` eilė (tik 1 transkripcija vienu metu, kad neOOM'intų),
   priima wav arba mp3; modelis/gijos iš nustatymų (`DIKTATURA_MODEL`/`DIKTATURA_THREADS` perrašo); tuščias tekstas →
   trina (jei `DELETE_EMPTY`), su tekstu → wav virsta mp3 (jei `ARCHIVE_MP3`); `nice 19 + ionice idle`
-  (kad garso capture nebadautų). `DIKTATURA_ASR_CMD` — ASR imitacija testams.
+  (kad garso capture nebadautų). Tuščias failas (≤ 44 B — įrašymas nutrūko) netranskribuojamas, o ištrinamas.
+  Pabaigoje (`trap EXIT`, dar laikant eilės užraktą) — **seno garso valymas** `diktatura.cleanup` (žr. žemiau).
+  `DIKTATURA_ASR_CMD` — ASR imitacija testams. Gavus užraktą, PIRMIAUSIA — 🌊 smailės `<bazė>.peaks`
+  (`diktatura.waveform`, ~1 % transkripcijos laiko; nepavyko — ne bėda; nužudytas signalu — darbas baigtas, žr.
+  gotchas), kelias perduodamas ASR moduliui `DIKTATURA_PEAKS` (eigos failui → ⏳ banga).
+  Antras argumentas — **išvesties bazė** (sekami aplankai): tekstas / banga / `.skip` rašomi ten, `--source` (visas
+  garsas — vienas kanalas su vardais pagal balsus), garsas niekada netrinamas / nekonvertuojamas, tuščias → `.skip`.
+  `DIKTATURA_RETRANSCRIBE=1` (🔁): ASR rašo į `<tekstas>.retx` (ne `.txt` galas — Tekstas nerodo kaip sesijos),
+  pavykus — senas → `<tekstas>.prev`, naujas į vietą; tuščias / klaida — senas lieka, nieko netrinama.
+  ASR moduliai priima `--out` (ir mono `--srt`).
+- **`diktatura.progress`** (stdlib; ⏳ langelis, ikonos meniu, `make progress`): KAS vyksta — iš procesų
+  (`transcribe-file.sh <failas>`: vaikas `flock` = laukia eilėje, kitaip vykdomas; `transcribe-pending.sh` — jo dar
+  nepaleisti failai), tik tos pačios aplinkos (`/proc/<pid>/environ` → tas pats `<runtime>` = ta pati eilė); EIGA —
+  `<runtime>/progress/<bazė>.json`, kurį rašo ASR modulis (`Reporter`: etapai `prep → vad → load → asr_me → asr_them →
+  names`, mono `vad → load → asr`; Whisper etapuose — kiek kanalo garso apdorota, po kiekvieno segmento, ≤ 1 kartą/s;
+  `pos` — iki kur ORIGINALAUS įrašo (VAD apkarpymas atstatytas) ir `peaks` — bangos failas: `processed_secs()` /
+  `peaks_file()` ⏳ bangai);
+  PROGNOZĖ — etapų greičiai iš `timing.json` (paskutinės 50 transkripcijų; sumų santykis + švelninimas numatytaisiais,
+  kol istorijos mažai) × garso / VAD kalbos trukmė; Whisper etape — tikras greitis; sulėtėjimas (baigtų etapų ir
+  dabartinio tikra / numatyta trukmė) taikomas likusiems etapams ir visai eilei (CPU apkrova). Bendra juosta — laikas
+  nuo serijos pradžios (iš eilės baigtos transkripcijos) / (praėjęs + likęs). `skip_current()` — nužudo vykdomo darbo
+  ASR / ffmpeg (bash baigia pats: „garsas paliktas"; laikini `diktatura-asr-<pid>-*` išvalomi), `stop_all()` — dar
+  naktinį ciklą ir laukiančius (bash PIRMA, tada jo `flock` — kitaip bash eitų toliau be užrakto). ASR serverio darbo
+  nutraukti negalima (mygtukas pilkas). ASR moduliai SIGTERM verčia `SystemExit` (sutvarko laikinus failus).
+- **`diktatura.cleanup`** (stdlib; Nustatymai → Archyvas → `AUDIO_CLEANUP`): trina tik **garsą** (`*.wav`, `*.mp3`;
+  wav+mp3 su ta pačia baze — vienas įrašas), tekstai lieka. `off` / `age` (senesnis nei `AUDIO_KEEP_DAYS`, laikas iš
+  failo vardo) / `size` (kol `recordings/` failai — garsas + tekstai, be pakatalogių — > `AUDIO_MAX_GB`, trinami
+  seniausi; **naujausias niekada**, net jei vienas viršija ribą). Niekada: rašomas / transkribuojamas
+  (`reset.busy_bases`), ką tik keistas (< 60 s), be teksto ir be `.skip`, kol `AUTOTRANSCRIBE=1`. Tušti failai trinami
+  visada (ir su `off`). Kviečia: `transcribe-file.sh` ir `transcribe-pending.sh` pabaigoje, `make cleanup [DRY=1]`,
+  Nustatymų „Išsaugoti" (pakeitus trynimo nustatymus — su patvirtinimu). Žurnalas — `transcribe.log` („🧹").
 
 ### Įrašymo daemon'ai (systemd --user; veikia tik vienas — `Conflicts=`)
 - `bin/autorecord.sh` (`diktatura-autorecord.service`, `make mode-slack`): aptinka Slack skambutį per PulseAudio
   `source-output`, kurio `application.name` ∈ {`ringrtc`, `Slack`, `WEBRTC VoiceEngine`} (žr. §5). Pradeda/sustabdo
   įrašymą (`SLACK_GRACE_SEC`). `MAX_REC_SEC` saugiklis nuo pakibusio huddle: įrašas sustabdomas ir **naujas
   nepradedamas, kol srautas nedings** (kitaip pakibęs srautas gamintų begalę failų). Testams: `DIKTATURA_PACTL`
-  (imitacija), `DIKTATURA_MATCH`, `DIKTATURA_POLL`.
+  (imitacija), `DIKTATURA_MATCH`, `DIKTATURA_POLL`. Kol laisvos vietos < `DIKTATURA_MIN_FREE_MB` (200) — skambutis
+  neįrašomas (pranešama vieną kartą).
 - `diktatura.audio.vox` (`diktatura-vox.service`, `make mode-vox`): balso aktyvumo įrašymas. Vienas `ffmpeg`
   (mic+monitor → stereo s16le → `pipe:1`), Python skaito 100 ms gabalus, skaičiuoja RMS dBFS.
   Sprendimus priima **`VoxGate`** (gryna klasė, be I/O → testuojama sintetiniais lygiais):
-  **adaptyvus gate su histereze** — triukšmo grindys (rolling 25-tas percentilis, 5 s, mokomasi tik budint) +
+  **adaptyvus gate su histereze** — triukšmo grindys (rolling 25-tas percentilis, 5 s, mokomasi budint) +
   `VOX_OPEN_MARGIN` (START) / `VOX_CLOSE_MARGIN` (SUSTAIN). 2 s kalibracija prieš leidžiant įrašyti. Pre-roll 0.8 s.
+  **Įrašo metu grindys tik keliamos** (`VoxGate._refloor`): jei paskutinės ~10 s — pastovus garsas (mediana ≤ 3 dB
+  virš tyliausių 10 %; kalboje skirtumas 7–12 dB), o net tyliausi gabalai virš išlaikymo slenksčio, grindys pasenusios
+  → pakeliamos iki to fono, garso trukmė ir tylos skaitiklis perskaičiuojami (kalbai baigusis užsidaro kaip įprastai;
+  jei visas įrašas buvo tik fonas — „per trumpas", ištrinamas). Žurnale: „↕ fonas garsesnis nei išmoktas triukšmo
+  lygis". Fiksuotame režime (`VOX_ADAPTIVE=0`) — neliečiama.
+  **Įrenginių sekimas:** ffmpeg srautai pavadinti `-name diktatura-vox-mic` / `diktatura-vox-sistema`; kas ~10 s
+  `device_problem()` (`pactl list source-outputs`, `LC_ALL=C`) tikrina, ar mūsų srautai prijungti prie reikiamų
+  šaltinių ir ar nepasikeitė numatytasis mikrofonas / garsiakalbiai. Jei ne — „🔀 … perjungiu garso capture":
+  atidarytas įrašas uždaromas ir išsaugomas, ffmpeg paleidžiamas iš naujo su dabartiniais numatytaisiais, vėl 2 s
+  kalibracija (ne dažniau nei kas 60 s; `pactl` nepasiekiamas — nieko nekeičiama; testų `DIKTATURA_CAPTURE_CMD` —
+  nesekama). Failo vardas niekada neperrašomas (`new_recording_path`: ta pati sekundė → +1 s).
   1 MB pipe buferis + `thread_queue_size` (apsauga nuo capture-badavimo). `VOX_MIN_SEC` tikrina **garso** trukmę
   (nuo atsidarymo iki paskutinio garsaus gabalo), ne failo — kitaip kosulys + tylos uodega praeitų.
   **Pauzė perklausai** (`diktatura.pause`, `<runtime>/pause` su galiojimo laiku): kol Diktatūra pati groja garsą
@@ -68,6 +115,10 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   nužudytų kartu su servisu — įrašą paims naktinis). Išėjimo kodai: 0 sustabdyta; 3 capture netikėtai baigėsi
   (systemd `Restart=on-failure` perkrauna). Testams: `DIKTATURA_MIC`/`DIKTATURA_MONITOR` (virtualūs įrenginiai),
   `DIKTATURA_CAPTURE_CMD` (komanda su stereo s16le PCM vietoj ffmpeg).
+  **Pilnas diskas:** laisvos vietos < `MIN_FREE_MB` (200; `DIKTATURA_MIN_FREE_MB`) — naujas įrašas nepradedamas
+  (vienas pranešimas, kol vietos atsiras); `ENOSPC` įrašo viduryje — įrašas nutraukiamas, `salvage()` perrašo wav
+  antraštę pagal tai, kas spėjo įsirašyti (antraštė jau išskirtame bloke — vietos nereikia; < 1 s — trinama), VOX
+  dirba toliau. Išsaugotą dalį transkribuoja naktinis.
 - `bin/rec-toggle.sh` (`make rec-toggle`, galima susieti su klavišu): rankinis start/stop → `rec_*.wav`.
 
 ### ASR + kalbėtojų atpažinimas (`.venv`)
@@ -115,15 +166,25 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
 - `diktatura.ui.tray` (`diktatura-tray.service`): AyatanaAppIndicator3. Būsena: runtime `recording` failas = 🔴,
   vyksta `diktatura.asr.*` arba mp3 konversija = 🟡, kitaip ⚪ (`compute_state` — gryna funkcija). Kol yra nežinomų
   balsų (`speakers/pending/`) — **pulsuoja** (pilna ↔ `*-dim.png` tos pačios spalvos, ~1 s; `icon_name()`).
-  Meniu: „⚙ Nustatymai" (viršuje), „🎓 Apmokymai paruošti (N)" (kai yra), „📄 Rodyti nuskaitytą tekstą", būsena,
+  Meniu: „⚙ Nustatymai" (viršuje), „🎓 Apmokymai paruošti (N)" (kai yra), „📄 Rodyti nuskaitytą tekstą", „⏳ 43 % · liko …" (kol transkribuojama — eigos langelis), būsena,
   režimas, įrašų aplankas, „Išeiti" (uždaro tik ikoną — įrašymo servisas veikia toliau; grąžinti: doko
   „Diktatūra" arba `make tray-on`). **Vidurinis klik → Nustatymai.** Ubuntu AppIndicator paspaudus visada atidaro
   meniu — langas tiesiai neatsidaro, todėl Nustatymai meniu viršuje. Testams `Tray(indicator=…, opener=…)`.
+  **💊 Įrašymo indikatorius** (`ui.pill`, `REC_PILL`; ikonos procese, laikmatis 100 ms): kol `<runtime>/recording`
+  rodo įrašą ≥ 1.5 s — POPUP langelis apačioje dešinėje: 🔴, šaltinis, laikmatis, gyva abiejų kanalų banga (8 s).
+  Lygiai — iš rašomo wav GALO (`LiveLevels`: antraštė → „data" blokas, ffmpeg LIST praleidžiamas; skaitomi tik nauji
+  pilni 100 ms gabalai) — VOX ir Slack daemon'ų keisti nereikėjo. Po įrašo (`after_text`, gryna): „⏳ Transkribuojama
+  43 %" (diktatura.progress), „⏳ Laukia eilėje", „🌙 transkribuos naktį", „✅ Tekstas paruoštas", ištrintas (per
+  trumpas) — dingsta. Spragtelėjus — Tekstas (transkribuojant — ⏳), ✕ — iki kito įrašo. `PillController` — būsenos be
+  GTK (testuojama), `PillView` — GTK.
 - **Programų meniu / dokas:** `make desktop` (`desktop/diktatura.desktop.in` → `~/.local/share/applications/`;
   įeina į `make install`) → `bin/diktatura-open.sh`: įjungia `diktatura-tray` (jei uždaryta) ir atidaro langą.
   Langas `GLib.set_prgname("diktatura")` → WM_CLASS sutampa su `StartupWMClass` — dokas jį rodo prie prisegtos ikonos.
 - `diktatura.ui.app`: **vienas langas** „Diktatūra" (Gtk.Application, vienas egzempliorius per D-Bus — antras
   paleidimas `--page <skiltis>` tik perjungia skiltį), skiltys `Gtk.Stack` + „◀ Atgal". `--shot <png>` — nuotrauka.
+  📄 Tekstas — `TextTabs` (Gtk.Notebook): „🎙 Pokalbiai" (`win.text`) + po `TextPage(source=…)` kiekvienam sekamam
+  aplankui (išjungtas, bet su tekstais — lieka); be aplankų skirtukų juosta paslėpta. Nematomas skirtukas
+  neatnaujinamas (atsidarius — atnaujinamas). Ctrl+F — matomo skirtuko / Nustatymų paieška.
   - `ui.text_page` (📄 Tekstas): modelis sesija → eilutės; tail'ina `recordings/*.named.txt|*.txt|*.clean.dialog.txt`
     (`sessions.text_files`), papildymas → tik naujos pilnos eilutės; perrašytas failas (kitas inode, pvz. Apmokymuose
     pervadintas kalbėtojas) → perpiešiama. Skyrikliai, kalbėtojai spalvomis, paieška (nuo 3 simb., ◀▶, Ctrl+F, Regex),
@@ -134,15 +195,45 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
     (pataisyti kalbėtoją + išmokti balsą fone — `speakers.teach`, komanda `text_page.teach_cmd`). 📊 statistika
     (`sessions.speaker_stats`; „↺ Nunulinti" — `diktatura.stats`: skaičiuoja tik eilutes po įsiminto laiko, nieko
     netrina), 💾 eksportas (.txt/.md).
+    🌊 **Banga** (`WAVEFORM`, „🌊 Banga"; `ui.waveform_view.WaveformView` — DrawingArea + cairo, be numpy): naujausios
+    sesijos, o spragtelėjus eilutę / grojant — tos (pažymėta; „⤓ Naujausia" / „Sekti naujus" — atgal). Stereo — dvi
+    juostos (Tu / kolegos), kolegų — tuo metu kalbančio spalva (`segment_color`), viršuje eilučių žymės, pasirinkta
+    eilutė — juosta, grojimo žymeklis (grojimas išeina už vaizdo — slenka). Spragtelėjus — `play_at()`, ratukas —
+    artinti ties pele (≥ 10 s), Shift+ratukas — slinkti, 2× — visa sesija; tooltip — laikas + eilutė. Smailės —
+    `<bazė>.peaks` (`diktatura.waveform`: uint8 dBFS kas 100 ms kanalui, 2 val. ≈ 144 KB; piešiant — fonas (20-tas
+    percentilis) = 0, garsiausia (99,5-tas) = pilna); nėra, bet garsas yra — skaičiuojamos fone (`.venv`, nice 19).
+    ✨ **Švarus** (`CLEAN_VIEW`, `FILLER_WORDS`; `diktatura.fillers`): rodomas tekstas be šnekos garsų (e, ee, mhm, aaa…;
+    „e." lieka), vartotojo žodžių ir pasikartojimų; eilutė iš vien užpildų slepiama; paieška / eksportas — kaip rodoma;
+    `Line.text` ir failai nekeičiami (žymės ⭐☐ ir toliau sutampa).
+    🔁 **Transkribuoti iš naujo** (dešinys klik; garsas turi būti, ne `.clean.dialog.txt`, ne vykdomas) — patvirtinimas
+    su trukmės prognoze → `services.spawn_detached` (`systemd-run --user` — savas cgroup, neužmuš uždarius langą)
+    `transcribe-file.sh` su `DIKTATURA_RETRANSCRIBE=1`; „↩ Grąžinti ankstesnę transkripciją" — sukeičia su `.prev`.
+    Sekamo aplanko skirtukas: viršuje aplankas, failų / tekstų / laukia, „🔄 Transkribuoti dabar"
+    (`transcribe-pending.sh --sources`, atskirai), „📂 Atidaryti"; antraštėse — aplanko pavadinimas; žymių raktas
+    `<id>/<failas>` (skirtingų aplankų failų vardai gali sutapti).
   - `ui.training_page` (🎓 Apmokymai): pending sąrašas + kontekstas (`store.occurrences_many`), ▶ grojimas
     (`paplay`; testams `DIKTATURA_PLAYER`), vardas su autocomplete → `store.assign`; „🙋 Tai aš" → `store.assign_owner`;
     „Ne žmogus" → `store.discard`; registruoti balsai: tavo balsas (pamiršti) + kolegos: pervadinti/sujungti/pamiršti.
     Po pakeitimų perpiešia Teksto skiltį.
+  - `ui.progress_dialog` (⏳ Transkripcija; Teksto mygtukas — jo užrašas kas 2 s „43 % · liko ~1 val. · eilėje 4",
+    ikonos meniu punktas, `app --progress`): modalinis kaip 📊 Statistika; dvi juostos (failas / visa eilė), praėjęs,
+    likęs, pabaiga laikrodžiu, eilės lentelė su prognozėmis, sulėtėjimo pastaba; „⏭ Praleisti šį" / „⏹ Sustabdyti
+    viską" su patvirtinimu (numatytasis „Atšaukti"); atsinaujina kas 1 s. 🌊 dabartinio failo banga: apdorota dalis
+    ryški, likusi išblukusi (`progress.processed_secs`; stereo — pirma Tu, tada kolegos); smailių nėra — nerodoma.
   - `ui.settings_page` (⚙ Nustatymai): laukai generuojami iš `config.SCHEMA` (naujas raktas schemoje atsiranda
-    automatiškai), įrašymo režimas per `services`, validacija prie laukų. Apačioje, toli nuo „Išsaugoti" —
+    automatiškai), įrašymo režimas per `services`, validacija prie laukų. „Archyvas" — gyva seno garso trynimo
+    suvestinė (`cleanup.summary`: kiek užima, ką ištrintų lange pasirinkti nustatymai), nereikalingas laukas pilkas;
+    pakeitus trynimo nustatymus „Išsaugoti" paklausia („Išsaugoti ir ištrinti") ir trina iškart. Apačioje, toli nuo „Išsaugoti" —
     „Atstatymas ir duomenys": „Atkurti numatytus nustatymus…" (patvirtinimas su pasikeisiančių sąrašu) ir „Ištrinti
     įrašus ir tekstus…" (`diktatura.reset`: varnelės įrašai+tekstai / laukiantys vardo balsai / vardų atpažinimas;
     numatytai — tik pirma). Abiejuose dialoguose numatytasis mygtukas — „Atšaukti" (Enter neištrina).
+    🔍 **Paieška** viršuje (Ctrl+F, Esc): kiekvienas nustatymas — paieškos elementas (pavadinimas + laukas +
+    paaiškinimas, raktas); lyginama be didžiųjų ir lietuviškų raidžių skirtumo (`fold()` — NFKD be diakritikų, su
+    vietomis originale → paryškinimas `<span background>` tiksliai ant originalaus teksto); grupės pavadinimo
+    atitikmuo — visa grupė; grupės be atitikmenų slepiamos. Paslėpti laukai išsaugomi kaip įprastai.
+    **Sekami aplankai** (po „Transkripcija"): sąrašas (jungiklis, pavadinimas, kelias, failų / tekstų / laukia, 📂, ✕),
+    „➕ Pridėti aplanką…" (pavadinimas, poaplankiai, „ir jau esančius failus" — numatytai tik jei jų ≤ 20) — taikoma
+    iškart, ne per „Išsaugoti"; pirmas aplankas įjungia `diktatura-sources.timer` (trūkstant unit'ų — `install_units()`).
 - `diktatura.reset` (stdlib): ką trinti pagal kategoriją; niekada — nustatymų, modelių, logų, `model.json`,
   `assigned.json`, DABAR rašomo (`<runtime>/recording`) ir DABAR transkribuojamo / archyvuojamo įrašo (pagal
   `pgrep` argumentus) — kitaip transkripcija po valymo „atgaivintų" seną tekstą. Eilėje laukę ištrinti įrašai
@@ -163,8 +254,23 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
 - `Makefile` — visos komandos (`make help`). Keliai jame išvedami taip pat kaip `paths.py` (XDG + `DIKTATURA_*`).
 - `make doctor` (`diktatura.doctor`, tik skaito): įrankiai, garsas, `.venv`, GTK/AppIndicator, modeliai (+SHA-256),
   nustatymai, servisų failai vs šablonai, režimas/ikona/naktinis, hooks, RAM/diskas → ✓/⚠/✗ + patarimas.
-- `diktatura.services` (stdlib): systemd --user vienoje vietoje (režimas vox/slack/off, timer, unit'ų būklė).
+- `diktatura.services` (stdlib): systemd --user vienoje vietoje (režimas vox/slack/off, timer'iai, unit'ų būklė,
+  `install_units()` kaip `make install-units`, `spawn_detached()` — ilgi darbai iš lango per `systemd-run --user`).
   Testams `DIKTATURA_SYSTEMCTL` / `DIKTATURA_SYSTEMD_DIR`.
+- **Sekami aplankai** (`diktatura.sources`, stdlib; `make sources`): `sources.json` — id (slug), pavadinimas, kelias,
+  įjungtas, poaplankiai, `since` (senesni failai ignoruojami). Garso failai (m4a, mp3, wav, ogg, opus, flac, aac, amr,
+  3gp, wma, webm; be `.part` / paslėptų), nekeisti ≥ 60 s (sinchronizuojami). Išvesties bazė
+  `<duomenys>/sources/<id>/<failas>` (poaplankis — „ ⁄ "), `<bazė>.src.json` — garso kelias ir įrašymo laikas (iš vardo
+  `20261014_101500` / `2026-10-14 10.15.00`, tada ffprobe `creation_time`, tada mtime) — `sessions.audio_for` /
+  `session_dt` jį naudoja. Transkripcija: naktinis (`transcribe-pending.sh` — įrašai, tada aplankai) ir
+  `diktatura-sources.timer` kas 2 min (`--sources --if-immediate`: tik MODE=immediate + AUTOTRANSCRIBE; tylus, kai nėra
+  ką daryti). ⏳ eiga (`progress.pending_files`) juos mato. „Ištrinti įrašus ir tekstus" trina ir aplankų tekstus
+  (garso — niekada). `doctor` — ar aplankai pasiekiami, ar „iškart" režimui įjungtas timer'is.
+- **MCP serveris** (`diktatura.mcp_server`, `bin/mcp-server.sh`, `make mcp` — tik parodo registravimo komandą):
+  JSON-RPC 2.0 per stdio (versijos 2025-06-18 / 2025-03-26 / 2024-11-05), TIK SKAITO: `list_sessions`, `search`
+  (regex, kalbėtojas, laikotarpis, šaltinis, clean), `get_transcript` (laiko intervalas, ≤ 1500 eil.),
+  `speaker_stats`, `list_sources`. Duomenys — `diktatura.transcripts` (pokalbiai + sekami aplankai, be GTK). Klaida
+  įrankyje → `isError`, serveris nelūžta. Privatumas: niekur nejungia pats; ką perskaito klientas — jo pokalbyje.
 - **Debug:** `diktatura.debug` + bash `dbg` (`bin/common.sh`) → `~/.local/state/diktatura/debug.log` (> 5 MB → `.1`).
   Įjungiama nustatymu `DEBUG` (`make debug-on`) arba `DIKTATURA_DEBUG=1|0` (env nugali). `make dlogs` — gyvai.
 - **Nustatymai** — `diktatura/config.py`: `SCHEMA` (tipas, ribos, LT aprašas kiekvienam raktui), `load()` (netinkama
@@ -174,8 +280,8 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   Bash skriptai config `source`'ina (`load_config` iš `common.sh`): pirma numatytieji, tada vartotojo.
 - systemd šablonai `systemd/*.in` su `@REPO@` → `make install-units` įrašo į `~/.config/systemd/user/`
   (repo galima klonuoti bet kur).
-- Naktinis `diktatura-nightly.timer` (01:30) → `bin/transcribe-pending.sh` (visi įrašai be teksto; praleidžia
-  rašomą failą ir `.skip`).
+- Naktinis `diktatura-nightly.timer` (01:30) → `bin/transcribe-pending.sh` (visi įrašai be teksto, tada sekamų
+  aplankų failai; praleidžia rašomą failą ir `.skip`; pabaigoje — seno garso valymas, net jei transkribuoti nebuvo ką).
 - Modeliai: `make models` (`tools/fetch_models.sh` — kalbėtojų ONNX, SHA-256 tikrinami), `make model-convert`
   (`tools/convert_azuolas.sh` — Ąžuolas → CT2 int8; torch tik laikiname venv).
 
@@ -226,6 +332,18 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   (tylus) įrašas. Sprendimas: niekada netranskribuoti lygiagrečiai su įrašymu (naktinis režimas), o jei
   immediate — capture turi pirmenybę (buferiai + žemas transkripcijos prioritetas).
 - **mp3 archyvas** (64 kbps) po transkripcijos — vietos taupymui; tušti įrašai trinami.
+- **🌊 Smailės atskirame faile, ne iš garso kaskart:** UI veikia sistemos python3 be numpy; 6.4 val. mp3 dekoduoti
+  trunka ~26 s (nice 19), o skaityti `.peaks` (≈ 460 KB) ir paruošti 1000 stulpelių — kelias ms. Be to banga lieka
+  ištrynus seną garsą. Skaičiuojama transkripcijos pradžioje — kad ⏳ langelis jau ją rodytų.
+- **💊 Lygiai iš wav galo, ne iš VOX:** tas pats veikia VOX ir Slack (abu rašo stereo wav), daemon'ų keisti nereikia,
+  o ikonos procesas jau veikia visada.
+- **Sekami aplankai — tekstai atskirai, garsas vietoje (savininko sprendimas 2026-10-15):** „nemesti į bendrą pool'ą" —
+  studijos, laikrodžio, telefono įrašai analizuojami atskirai (skirtukai). Garsas nekopijuojamas (vieta diske) ir
+  nekeičiamas — sinchronizuojami aplankai gali grįžti į telefoną. Vietoj vienkartinio „📥 įkelti failą" (Etapo 13 4
+  punktas) — sekami aplankai: įkelti = įmesti failą į aplanką.
+- **Užpildai taisyklėmis, ne LLM:** LLM anksčiau atmestas (privatumas, RAM); tikruose tekstuose dažniausi „nu" (852),
+  „žinai" (509), „tipo" (163), „mhm", „e/ee", „aaa" — šnekos garsai valomi visada, kalbos žodžiai — tik pasirinkti
+  („žinai" dažnai prasmingas).
 
 ## 4. Geležies realybė (dizaino apribojimai)
 
@@ -241,6 +359,20 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
 - **Capture-badavimas:** žr. §3 (transkripcija įrašymo metu). Nematuok „ar tyla" tik pagal uodegą — tikrink
   VISO įrašo garsą (buvo klaida palaikius realų įrašą tuščiu).
 - **VOX kalibracija:** įrašymas leidžiamas tik po 2 s triukšmo mokymosi (kitaip close_thr per žemas → nesustoja).
+- **Nesibaigiantis VOX įrašas + „sistemos" kanale mikrofonas (2026-10-13):** `vox_20261013_101730.wav` rašėsi 6.4 val.
+  (1.4 GB), nors savininkas seniai nekalbėjo. Priežastis — dvi grandinės iš to paties įvykio: 2026-10-12 20:51 HP
+  USB-C dokas atsijungė ir vėl prisijungė; nuo tada mikrofono kanalas davė −94 dB (praktiškai skaitmeninė tyla — ką
+  kalbėta 20:51–10:13, į L kanalą nepateko; R kanalas veikė), ir VOX išmoko grindis −92 dB. ~10:14 mikrofonas vėl
+  „atgijo", o kambario fonas (ventiliatorius, pastovus −49…−66 dB) buvo 26 dB virš grindžių → virš išlaikymo slenksčio
+  (−84) → tyla niekada nebuvo „tyla". Grindys mokomos tik budint, o fonas iškart atidarydavo naują įrašą, tad jos
+  nebeatsistatė; tą rytą įrašai užsidarydavo tik dėl Apmokymų perklausos pauzės, o po paskutinės (10:17:30) — niekada.
+  Tuo pačiu PulseAudio perkėlė „sistemos garso" srautą į mikrofoną (R = L su 1.76 s vėlavimu, koreliacija 0.97) —
+  kolegų garsas nebūtų įrašytas. Abu ffmpeg srautai vadinosi „Lavf58.76.100", tad ir `module-stream-restore` juos laikė
+  vienu. **Taisymas:** `_refloor` (grindys keliamos įrašo metu), įrenginių sekimas + atskiri srautų vardai (žr. §3).
+  Patikrinta perleidus tą patį 6 val. įrašą per naują logiką: užsidaro ~12:17, kai kalba baigėsi; likusios 4 val.
+  ventiliatoriaus — jokio įrašo. **Atmesta hipotezė:** mikrofono garsumas (27 %, gal Slack AGC) — ne priežastis;
+  lemia ne absoliutus lygis, o tai, kad grindys išmoktos vienomis sąlygomis ir nebeatsinaujina. Pastovumo riba (3 dB)
+  parinkta pagal tikrą įrašą: pastovus fonas 0.5–1 dB, kalba 7–12 dB; 5 dB jau kartais suveikdavo sintetinei kalbai.
 - **Du interpretatoriai:** `.venv` (Python 3.10: faster-whisper, sherpa-onnx, numpy, sklearn — daemon'ai ir ASR) ir
   **sistemos `python3`** (gi/GTK — tray ir teksto langas). Todėl `paths.py` ir `config.py` — **tik stdlib**
   (juos importuoja abu). UI moduliuose neimportuoti numpy/faster-whisper.
@@ -270,6 +402,36 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
 - **PyGObject + savas Gtk.Container (`WrapBox`):** jei Python nuorodos į objektą nėra, jo Python dalis (`_children`)
   dingsta — GTK naikindamas langą sukosi be galo (testai „pakibdavo"). Todėl `WrapBox._live` laiko objektus iki
   `do_destroy`. Taip pat `Gtk.Viewport` savo vaiko nesunaikina — `MainWindow._on_destroy` skiltis naikina aiškiai.
+- **Pilnas diskas = 0 B wav lavina (2026-10-10):** VOX `wave.writeframes` gaudavo `ENOSPC`, procesas lūždavo, systemd
+  perkraudavo, kitas garsas — vėl naujas failas ir vėl lūžis: per 45 min liko 19 tuščių `vox_*.wav`, o naktinis juos
+  kas naktį bandė transkribuoti („Invalid data"). Diską užpildė ne Diktatūra (įrašų katalogas ~0.4 GB). Dabar: VOX
+  tikrina vietą ir pergyvena `ENOSPC`, tušti failai trinami (`transcribe-file.sh`, `diktatura.cleanup`).
+- **Niekada `pkill -f` su bendru šablonu (2026-10-12):** bandymo `pkill -f "^flock 9$"` nužudė TIKROS eilės `flock`
+  vaikus → ~22 laukę darbai praėjo užraktą ir transkribavo lygiagrečiai šalia 2 val. įrašo (4 Ąžuolo krovimai ≈ OOM
+  rizika; du sustabdyti SIGKILL ir grąžinti į eilę). Stabdyti tik pagal PID; `diktatura.progress` atrenka darbus pagal
+  `<runtime>` ir pirma stabdo bash, tik tada `flock`. Tie lygiagretūs darbai dar ir „išmokė" prognozę netikrų greičių
+  (10× lėtesnis paruošimas, „kalbos nėra") — todėl greičiai švelninami numatytaisiais, o užteršta istorija išvalyta.
+- **`bin/*.sh` keisti ne vietoje, kai jie veikia:** bash skriptą skaito dalimis pagal poslinkį faile (fd 255), todėl
+  perrašius `transcribe-file.sh` tame pačiame inode, vykstanti (ar eilėje laukianti) transkripcija toliau skaitytų
+  pasislinkusį tekstą — atsitiktines komandas. Rašyti į laikiną failą ir `mv`/`os.replace` (naujas inode — veikiantys
+  procesai skaito seną). Pagauta 2026-10-12: perrašius skriptą vietoje, vykstančiai 2 val. įrašo transkripcijai
+  (sena versija) kitas tekstas būtų prasidėjęs eilutės viduryje — tame inode baitai sulygiuoti, švari versija padėta
+  per rename. `make restart` VOX'ui nutraukia ir jo paleistas transkripcijas (tas pats systemd cgroup).
+- **„Ar vyksta transkripcija?" — `pgrep -f` randa ir save (2026-10-15):** tikrinant prieš keičiant `bin/*.sh`,
+  `pgrep -f "[t]ranscribe-(file|pending)\.sh"` vis tiek rado mano paties `bash -c …` (toje pačioje komandoje buvo
+  `chmod --reference=bin/transcribe-file.sh` — `[t]` triukas gelbsti tik nuo paties šablono teksto). Tikri darbai
+  paleidžiami kaip `bash /…/bin/transcribe-file.sh …`, tad tikrinti eilutės PRADŽIĄ:
+  `pgrep -f '^(/usr/bin/|/bin/)?bash /[^ ]*/bin/[t]ranscribe-(file|pending)[.]sh'`.
+- **⏭ „Praleisti" nužudo tik VAIKĄ:** bash tęsia kitą komandą. Iki ASR tai buvo gerai (nėra išvesties → „garsas
+  paliktas"), bet 🌊 smailių žingsnis (prieš ASR) nužudytas „Praleisti" metu būtų leidęs transkripcijai prasidėti —
+  todėl `transcribe-file.sh` signalu nutrauktą žingsnį (rc ≥ 128) laiko darbo pabaiga (testas Q9b).
+- **Rašomas wav — antraštėje 0 B:** Python `wave` ir ffmpeg duomenų dydį įrašo tik uždarant, o ffmpeg dar prideda
+  `LIST` bloką (antraštė ne 44 B). Gyvai skaitant (💊) — ieškoti „data" bloko ir skaičiuoti iš failo dydžio.
+- **systemd oneshot = cgroup:** `diktatura-sources.service` transkribuoja pats (sinchroniškai), ne paleidžia ir išeina —
+  išėjus servisui systemd nužudytų jo vaikus. Iš lango paleidžiami ilgi darbai (🔁, „🔄 Transkribuoti dabar") — per
+  `systemd-run --user` (`services.spawn_detached`), kad neužmuštų uždarius langą ar perkrovus ikoną.
+- **Sekamų aplankų failų vardai kartojasi** („Recording 1.m4a" telefone ir laikrodyje) — žymių raktas `<id>/<failas>`,
+  tekstai atskiruose kataloguose; ne-ASCII ir tarpai varduose — normalu (testai su „Įrašas 7").
 - **GTK laikmačiai po lango uždarymo:** `GLib.timeout_add` gyvena ilgiau už langą — sunaikintų valdiklių lietimas =
   segfault (pagauta UI testuose: „✎ Kas kalbėjo?" mokymosi laikmatis). Laikmačio callback'ai tikrina `self._alive`.
 
@@ -301,7 +463,7 @@ biometrija). Apsauga sluoksniais — kiekvienas veikia net jei kitas sugenda:
 
 | Komanda | Kas | Trukmė |
 |---|---|---|
-| `make test` | greiti: nustatymai, VOX (sintetinis capture), Slack (netikras `pactl`/`ffmpeg`), eilė (netikras ASR), de-dup, kalbėtojai (griežtumas, tavo balsas, pataisymai, modelio perėjimas), doctor, UI, privatumas | ~1.5 min |
+| `make test` | greiti: nustatymai, VOX (sintetinis capture, pasenusios grindys, įrenginių perjungimas), 🌊 bangos (smailės, piešimas, Tekstas, ⏳), 💊 indikatorius, sekami aplankai (eilė, skirtukai, tavo failai nepaliečiami), 🔁 iš naujo, ✨ užpildai, MCP (tikras stdio), 🔍 Nustatymų paieška, Slack (netikras `pactl`/`ffmpeg`), eilė (netikras ASR), eiga ir prognozė (tikra eilė, praleidimas, stabdymas), seno garso trynimas ir pilnas diskas, de-dup, kalbėtojai (griežtumas, tavo balsas, pataisymai, modelio perėjimas), doctor, UI, regresija (užrakinta matoma elgsena), privatumas | ~2.5 min |
 | `make test-full` | tikras Ąžuolas + LT kalba (Common Voice CC0, `make fixtures`), WER ≤ 25 %; tikras balso modelis; tavo balsas R kanale → „Tu" | ~1–5 min |
 | `make test-e2e` | tikras VOX + ffmpeg per virtualius PulseAudio įrenginius | ~2 min |
 | `make test-privacy` | privatumo sargas | ~10 s |

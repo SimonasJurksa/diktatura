@@ -16,6 +16,8 @@ CSS = b"""
 .dk-title { font-weight: bold; font-size: 1.15em; }
 .dk-mono { font-family: monospace; }
 .dk-pill { padding: 2px 8px; border-radius: 10px; background-color: alpha(@theme_fg_color, 0.08); }
+.dk-bar trough, .dk-bar progress { min-height: 14px; }
+.dk-pillwin { background-color: @theme_bg_color; border: 1px solid alpha(@theme_fg_color, 0.3); }
 """
 _installed = False
 

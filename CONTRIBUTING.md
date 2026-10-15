@@ -21,11 +21,11 @@ make doctor          # ar viskas vietoje
 
 | Kur | Kas |
 |---|---|
-| `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py`, `reset.py` | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
+| `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py`, `reset.py`, `cleanup.py` (seno garso trynimas), `progress.py` (transkripcijos eiga ir prognozė), `sources.py` (sekami aplankai), `waveform.py` (🌊 smailės; `compute()` — tik `.venv`), `fillers.py` (✨ užpildai), `transcripts.py` (tekstai be GTK), `mcp_server.py` (🔌 MCP, tik skaito) | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
 | `diktatura/audio/` | `vox.py` (VOX daemon'as, `VoxGate` — gryna logika), `prefilter.py` (Silero VAD), `echo.py` (kolegų garso šalinimas iš mikrofono kanalo) |
 | `diktatura/asr/` | `transcribe.py` (mono), `transcribe_named.py` (stereo + vardai), `dialog.py` (de-dup), `server.py`/`client.py` (nuolat įkrautas modelis) |
 | `diktatura/speakers/` | `store.py` (balsų saugykla, stdlib), `speakerlib.py` (embedding'ai, griežtas vardų priskyrimas), `teach.py` (mokymasis iš pataisymo), `migrate.py` / `relabel.py` (balso modelio keitimas), įrankiai |
-| `diktatura/ui/` | GTK (sistemos `python3`): `app.py` (langas), `text_page.py`, `training_page.py`, `settings_page.py`, `tray.py`, `themes.py` (temos), `gtk.py` (bendras CSS, `WrapBox`) |
+| `diktatura/ui/` | GTK (sistemos `python3`): `app.py` (langas, `TextTabs` — Teksto skirtukai), `text_page.py`, `training_page.py`, `settings_page.py`, `tray.py`, `themes.py` (temos), `progress_dialog.py` (⏳ eigos langelis), `waveform_view.py` (🌊 banga, cairo), `pill.py` (💊 įrašymo indikatorius), `gtk.py` (bendras CSS, `WrapBox`) |
 | `bin/` | shell įėjimai (`common.sh` — keliai/nustatymai bash'ui; laikyti sinchronizuotą su `paths.py`) |
 | `systemd/*.in` | servisų šablonai (`@REPO@` → `make install-units`) |
 | `desktop/*.in` | programų meniu / doko paleidiklis (`@REPO@` → `make desktop`) |
@@ -38,13 +38,16 @@ Taisyklės:
 - Keičiant balso modelį: `tools/fetch_models.sh` (URL + SHA-256) ir `store.EMB_MODEL` — senų balsų saugykla taps
   nesuderinama (vardai nerašomi), kol vartotojas paleis `make speakers-migrate APPLY=1`.
 - Paleidimas — tik kaip modulio: `PYTHONPATH=<repo> python -m diktatura.…`.
+- Ilgas darbas iš lango (transkripcija) — tik per `services.spawn_detached()` (`systemd-run --user`), ne `Popen`:
+  kitaip uždarius langą ar perkrovus ikoną jis žūtų kartu (tas pats cgroup).
+- Sekamų aplankų garso failai — vartotojo: niekada netrinti, nekeisti, nekonvertuoti (tekstai — `<duomenys>/sources/`).
 - UI: mygtukų eilėms — `flow()` (ne `Gtk.Box`), spalvoms — temos (`ui/themes.py`), ne „kietos" reikšmės; patikrinti
   visas 4 temas ir siaurą langą (`tools/screenshots.sh` + `MainWindow.apply_theme(...)`).
 
 ## 3. Testai
 
 ```bash
-make test            # greiti (~1.5 min): nustatymai, VOX, Slack, eilė, VAD, kalbėtojai, ASR serveris, UI, doctor, privatumas
+make test            # greiti (~2.5 min): nustatymai, VOX, Slack, eilė, eiga, VAD, kalbėtojai, ASR serveris, UI, doctor, regresija
 make test-full       # + tikras Ąžuolas su LT garsu (WER ≤ 25 %), ASR serveris, tikras balso modelis
 make test-e2e        # tikras VOX + ffmpeg per virtualius PulseAudio įrenginius (tavo garso nekeičia)
 make test-privacy    # privatumo sargas
@@ -57,6 +60,11 @@ make test T="-k vox" # pytest argumentai
   `real_models` (tikri modeliai + tikras transkripcijos užraktas).
 - UI testai — GTK per `broadwayd` (langai tavo ekrane nerodomi).
 - Kiekvienas pakeitimas — su testu; prieš PR: `make test && make test-privacy` (geriausia ir `test-full`, `test-e2e`).
+- **Regresijos testai** (`tests/test_regression.py`, `tests/ui/test_regression_ui.py`) užrakina tai, ką mato savininkas:
+  numatytuosius nustatymus ir ribas, `make` komandas, transkripcijos / eksporto formatą, mygtukus, meniu, Nustatymų
+  grupes. Lūžo — vadinasi pakeitei matomą elgseną: jei sąmoningai, atnaujink testą (pakeitimas matosi peržiūroje).
+- Testuose procesus stabdyti tik pagal PID (ar `diktatura.progress` su testo `<runtime>`), niekada `pkill -f`: tame
+  pačiame kompiuteryje gali suktis tikra transkripcijų eilė.
 
 ## 4. Privatumas (repo public!)
 

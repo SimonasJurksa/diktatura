@@ -12,13 +12,21 @@ Pipeline: L — kolegų garso kopijos atėmimas (ECHO_CANCEL, diktatura.audio.ec
 -> modelis nekraunamas; apkarpymas) -> Whisper -> laikai atgal į originalą -> R segmentams vardai -> de-dup
 (Tu vs kolegos) -> dialogas.
 
+Eiga (⏳ langelis, diktatura.progress): etapai prep -> vad -> load -> asr_me -> asr_them -> names; Whisper etapuose —
+kiek kanalo garso jau apdorota. Sėkmingai baigus etapų trukmės įrašomos į timing.json (prognozei).
+
 Naudojimas:
     python -m diktatura.asr.transcribe_named <stereo.wav> [--model azuolas-ct2] [--threads 6]
         [--name-threshold 0.5] [--name-margin 0.1]   (numatytai — SPEAKER_THRESHOLD / SPEAKER_MARGIN nustatymai)
+        [--out <tekstas.named.txt>]                   (numatyta — šalia garso)
+        [--source]   sekamo aplanko failas (telefonas, laikrodis, studija; bet koks formatas, mono ar stereo): visas
+                     garsas — vienas kanalas, kalbėtojai pagal balsus kaip kolegų kanale (tavo balsas — „Tu")
 """
 import argparse
 import os
+import signal
 import subprocess
+import sys
 import tempfile
 import time
 import wave
@@ -27,7 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
-from diktatura import config, debug, paths
+from diktatura import config, debug, paths, progress
 from diktatura.asr import dialog, models
 from diktatura.audio import prefilter
 from diktatura.speakers import speakerlib as sl
@@ -79,13 +87,20 @@ def load_wav(path):
     return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def transcribe_plan(model, plan, args):
-    """Whisper apkarpytam kanalui (VAD) -> [(start, end, tekstas)] ORIGINALAUS įrašo laiku."""
+def transcribe_plan(model, plan, args, on_progress=None):
+    """Whisper apkarpytam kanalui (VAD) -> [(start, end, tekstas)] ORIGINALAUS įrašo laiku.
+    on_progress(s, pos) — po kiekvieno segmento: kiek (apkarpyto) kanalo garso jau apdorota ir iki kurios ORIGINALAUS
+    įrašo vietos (⏳ banga)."""
     if plan.skip:
         return []
     segs, _ = model.transcribe(plan.audio, language=args.lang, beam_size=args.beam,
                                vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))
-    out = [(plan.to_original(s.start), plan.to_original(s.end), s.text.strip()) for s in segs if s.text.strip()]
+    out = []
+    for s in segs:
+        if on_progress:
+            on_progress(s.end, plan.to_original(s.end))
+        if s.text.strip():
+            out.append((plan.to_original(s.start), plan.to_original(s.end), s.text.strip()))
     plan.audio = None                       # atlaisvinti RAM prieš kitą kanalą
     return out
 
@@ -125,27 +140,43 @@ def run(argv=None, get_model=models.load) -> int:
     ap.add_argument("--name-margin", type=float, help="numatytai SPEAKER_MARGIN")
     ap.add_argument("--vad", choices=("on", "off", "trim"),
                     help="perrašo VAD nustatymus palyginimams: off — be VAD; on — vartai; trim — vartai + apkarpymas")
+    ap.add_argument("--out", help="teksto failas (numatyta: <garsas>.named.txt)")
+    ap.add_argument("--source", action="store_true",
+                    help="sekamo aplanko failas: visas garsas — vienas kanalas su vardais pagal balsus")
     args = ap.parse_args(argv)
 
     audio = Path(args.audio).expanduser()
-    out = audio.with_suffix(".named.txt")
-    chans = subprocess.check_output(
-        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
-         "stream=channels", "-of", "csv=p=0", str(audio)], text=True).strip()
-    if chans != "2":
-        raise SystemExit(f"Reikia STEREO (L=mic,R=monitor); yra {chans} kanalas(-ai).")
+    out = Path(args.out) if args.out else audio.with_suffix(".named.txt")
+    if not args.source:
+        chans = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+             "stream=channels", "-of", "csv=p=0", str(audio)], text=True).strip()
+        if chans != "2":
+            raise SystemExit(f"Reikia STEREO (L=mic,R=monitor); yra {chans} kanalas(-ai).")
     vad = prefilter.settings()
     if args.vad:
         vad.enabled, vad.trim = args.vad != "off", args.vad == "trim" or (args.vad == "on" and vad.trim)
-    t1 = time.time()
+    with progress.Reporter(audio, "named", args.model, args.threads) as rep:
+        return _run(audio, out, vad, args, get_model, rep)
 
-    with tempfile.TemporaryDirectory() as td:
+
+def _run(audio, out, vad, args, get_model, rep) -> int:
+    t1 = time.time()
+    rep.phase("prep")
+    with tempfile.TemporaryDirectory(prefix=f"{progress.TMP_PREFIX}{os.getpid()}-") as td:
         me_wav = os.path.join(td, "me.wav")
         them_wav = os.path.join(td, "them.wav")
-        ec = extract_me(str(audio), me_wav, td, bool(config.load()["ECHO_CANCEL"]))
-        extract(str(audio), 1, them_wav)
-        me_audio, them_audio = load_wav(me_wav), load_wav(them_wav)
-    dur = len(me_audio) / 16000
+        if getattr(args, "source", False):          # vienas kanalas (visi kanalai sumaišomi) — „kolegų" kelias
+            ec = None
+            _ff(["-i", str(audio), "-af", LOUDNORM, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", them_wav])
+            them_audio = load_wav(them_wav)
+            me_audio = np.zeros(len(them_audio), dtype=np.float32)    # tuščias „Tu" kanalas — VAD jį praleis
+        else:
+            ec = extract_me(str(audio), me_wav, td, bool(config.load()["ECHO_CANCEL"]))
+            extract(str(audio), 1, them_wav)
+            me_audio, them_audio = load_wav(me_wav), load_wav(them_wav)
+    dur = len(them_audio) / 16000
+    rep.set(audio_sec=dur)
     if ec is not None:
         print("Aidas (kolegų garsas mikrofone): " + (
             f"pašalintas — poslinkis {ec['lag_ms']} ms, koherencija {ec['coherence']}" if ec["applied"]
@@ -153,6 +184,7 @@ def run(argv=None, get_model=models.load) -> int:
         debug.log("asr", f"{audio.name}: aido šalinimas {ec}")
 
     # VAD: kur kalba? (prieš kraunant ~3 GB modelį)
+    rep.phase("vad")
     me_plan = vad.plan(me_audio)
     del me_audio                            # RAM: ilgas skambutis = šimtai MB; L originalo nebereikia
     them_plan = vad.plan(them_audio)   # R originalas lieka — balso embedding'ams
@@ -161,27 +193,33 @@ def run(argv=None, get_model=models.load) -> int:
               + (" — praleidžiama" if pl.skip else f" → transkribuojama {len(pl.audio) / 16000:.1f}s"))
         debug.log("asr", f"{audio.name}: VAD {nm} kalbos {pl.speech_sec:.1f}/{pl.original_sec:.1f}s, "
                          f"atkarpų {len(pl.spans)}, {'PRALEISTA' if pl.skip else 'transkribuojama'}")
+    rep.set(speech=[me_plan.speech_sec, them_plan.speech_sec], skip=[me_plan.skip, them_plan.skip])
     if me_plan.skip and them_plan.skip:
         print(f"∅ VAD: kalbos nerasta (< {vad.min_speech:g} s) — modelis nekraunamas, tekstas tuščias")
         debug.log("asr", f"{audio.name}: VAD — kalbos nėra, modelis NEkrautas")
         out.write_text("", encoding="utf-8")
+        rep.finish()
         return 0
 
     print(f"Registruoti balsai: {store.names() or '(nėra)'}  | nežinomų laukia: {store.pending_count()}")
     t0 = time.time()
+    rep.phase("load")
     model = get_model(args.model, args.compute, args.threads)
     t_load = time.time() - t0
     debug.log("asr", f"{audio.name}: modelis {args.model} užkrautas per {t_load:.1f}s (threads={args.threads})")
 
     print("Transkribuoju: Tu...")
-    me = transcribe_plan(model, me_plan, args)
+    rep.phase("asr_me", total=0 if me_plan.skip else len(me_plan.audio) / 16000)
+    me = transcribe_plan(model, me_plan, args, rep.advance)
     debug.log("asr", f"{audio.name}: L (Tu) {len(me)} segm.")
     print("Transkribuoju: kolegos...")
-    them = transcribe_plan(model, them_plan, args)
+    rep.phase("asr_them", total=0 if them_plan.skip else len(them_plan.audio) / 16000)
+    them = transcribe_plan(model, them_plan, args, rep.advance)
     debug.log("asr", f"{audio.name}: R (kolegos) {len(them)} segm.")
 
     # Vardai kolegų segmentams per balso embedding (registruoti -> vardas, tavo balsas -> „Tu", nauji -> pending)
     print("Priskiriu vardus (balso atpažinimas)...")
+    rep.phase("names")
     named, new_pending = name_colleagues(them, them_audio, audio.stem, args.me, args.name_threshold, args.name_margin)
     if new_pending:
         print(f"🔎 Nauji nežinomi balsai: {new_pending} — pavyzdžiai {paths.PENDING} (vardai: Apmokymai)")
@@ -198,10 +236,13 @@ def run(argv=None, get_model=models.load) -> int:
     cnt = Counter(who for _, _, who, _ in rows)
     print("Kalbėjo:", ", ".join(f"{w}×{n}" for w, n in cnt.most_common()))
     print(f"Išsaugota: {out}")
+    rep.finish()
     return 0
 
 
 def main() -> None:
+    # SIGTERM (⏳ „Praleisti" / „Sustabdyti") -> SystemExit: laikini failai ir eigos failas sutvarkomi
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     raise SystemExit(run())
 
 

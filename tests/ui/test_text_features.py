@@ -321,3 +321,84 @@ def test_teach_poll_after_window_closed_does_not_touch_widgets(demo, fake_system
     w.destroy()
     gtk.pump(0.8)                                                           # laikmatis suveikia po uždarymo
     assert not tp._alive
+
+
+# ── X5–X7: 🔁 transkribuoti iš naujo / ↩ ankstesnė ──
+
+def test_x5_retranscribe_menu_and_confirmation(win, demo, monkeypatch):
+    from diktatura import services
+    from diktatura.ui.gtk import Gtk
+    tp = win.text
+    by = {ln.text: ln for ln in tp.visible_lines()}
+    lab = lambda ln: [m.get_label() for m in tp.menu_items(ln) if hasattr(m, "get_label") and m.get_label()]  # noqa
+    assert "🔁 Transkribuoti šią sesiją iš naujo…" in lab(by["po diegimo"])
+    assert "🔁 Transkribuoti iš naujo (garso nebėra)" in lab(by["vakarykštė pastaba"])
+    calls, texts = [], []
+    monkeypatch.setattr(services, "spawn_detached", lambda cmd, name, env=None: calls.append((cmd, name, env)))
+
+    def answer(resp):
+        def run(dlg):
+            texts.append(dlg.get_property("secondary-text"))
+            return resp
+        return run
+    tp.run_dialog = answer(Gtk.ResponseType.CANCEL)
+    assert not tp.on_retranscribe(by["po diegimo"].session) and calls == []
+    assert "0:30 garso" in texts[0] and "Senas tekstas lieka" in texts[0]
+    tp.run_dialog = answer(Gtk.ResponseType.OK)
+    assert tp.on_retranscribe(by["po diegimo"].session)
+    [(cmd, name, env)] = calls
+    assert cmd[1].endswith("bin/transcribe-file.sh") and cmd[2].endswith(f"slack_{day(0)}_100000.wav")
+    assert len(cmd) == 3 and name == "retx" and env == {"DIKTATURA_RETRANSCRIBE": "1"}
+    assert "transkribuojama iš naujo" in tp.status.get_text()
+
+
+def test_x6_legacy_and_busy_sessions_cannot_retranscribe(win, demo, monkeypatch):
+    from diktatura import progress
+    tp = win.text
+    s = next(ln.session for ln in tp.visible_lines() if ln.text == "po diegimo")
+    job = progress.Job(pid=1, file=s.path.with_name(f"slack_{day(0)}_100000.wav"), state="running")
+    monkeypatch.setattr(tp, "_jobs", lambda: [job])
+    assert tp.can_retranscribe(s) == (False, "jau transkribuojama")
+    (demo.recordings / f"vox_{day(0)}_080000.clean.dialog.txt").write_text("[0:00:01] Tu: senas formatas\n")
+    audio.write_wav(demo.recordings / f"vox_{day(0)}_080000.wav", audio.speech(1))
+    tp.refresh()
+    old = next(ln.session for ln in tp.visible_lines() if ln.text == "senas formatas")
+    assert tp.can_retranscribe(old) == (False, "senas formatas")
+
+
+def test_x7_restore_previous_swaps_both_ways(win, demo):
+    tp = win.text
+    s = next(ln.session for ln in tp.visible_lines() if ln.text == "po diegimo")
+    prev = s.path.with_name(s.path.name + ".prev")
+    prev.write_text("[0:00:01] Ona: ankstesnė versija\n", encoding="utf-8")
+    ln = next(ln for ln in tp.visible_lines() if ln.text == "po diegimo")
+    assert "↩ Grąžinti ankstesnę transkripciją" in [m.get_label() for m in tp.menu_items(ln) if hasattr(m, "get_label")]
+    assert tp.restore_previous(s)
+    assert "ankstesnė versija" in tp.text() and "po diegimo" not in tp.text()
+    assert "po diegimo" in prev.read_text()
+    assert tp.restore_previous(next(ln.session for ln in tp.visible_lines() if ln.text == "ankstesnė versija"))
+    assert "po diegimo" in tp.text()
+
+
+# ── Y8: ✨ švarus rodinys ──
+
+def test_y8_clean_view_toggle_export_and_settings(win, demo):
+    from diktatura import config
+    tp = win.text
+    (demo.recordings / f"vox_{day(0)}_120000.named.txt").write_text(
+        "[0:00:01] Tu: ee, nu, aš aš manau, kad gerai\n[0:00:04] Ona: Mhm.\n", encoding="utf-8")
+    tp.set_period("all")
+    assert "ee, nu, aš aš manau" in tp.text() and "Ona: Mhm." in tp.text()
+    tp.btn_clean.set_active(True)
+    assert config.load()["CLEAN_VIEW"] is True and "✨ švarus" in tp.status.get_text()
+    assert "Tu: aš manau, kad gerai" in tp.text() and "Mhm" not in tp.text()     # „nu" — numatytuose žodžiuose
+    assert "- **Tu** `0:00:01` aš manau, kad gerai" in tp.export_text("md")
+    assert len(tp.find_ranges("aš manau")) == 1
+    config.save({"FILLER_WORDS": ""})                                           # pakeista Nustatymuose
+    tp.refresh()
+    assert "Tu: nu, aš manau, kad gerai" in tp.text()
+    config.save({"CLEAN_VIEW": "0"})
+    tp.refresh()
+    assert not tp.btn_clean.get_active() and "ee, nu, aš aš manau" in tp.text()
+    ln = next(x for x in tp.visible_lines() if x.text.startswith("ee, nu"))
+    assert ln.text == "ee, nu, aš aš manau, kad gerai"                         # failas / eilutė nepakeisti

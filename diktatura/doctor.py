@@ -184,6 +184,31 @@ def check_services(cfg: dict) -> list:
     return out
 
 
+def check_sources(cfg: dict) -> list:
+    """Sekami aplankai: ar pasiekiami, kiek laukia, ar „iškart" režimui įjungtas timer'is."""
+    from diktatura import sources
+    items = sources.load()
+    if not items:
+        return [R(OK, "sekamų aplankų nėra (Nustatymai → „Sekami aplankai\" — telefonas, laikrodis…)")]
+    out = []
+    for s in items:
+        if not s.enabled:
+            out.append(R(OK, f"{s.name}: išjungtas"))
+        elif not s.dir.is_dir():
+            out.append(R(WARN, f"{s.name}: aplanko nėra ({s.path})", "prijunk diską / sinchronizavimą arba pašalink "
+                                                                      "aplanką Nustatymuose"))
+        elif not os.access(s.dir, os.R_OK | os.X_OK):
+            out.append(R(FAIL, f"{s.name}: aplanko skaityti negalima ({s.path})", f"chmod u+rx '{s.path}'"))
+        else:
+            n = len(sources.pending(s))
+            out.append(R(OK, f"{s.name}: {s.path}" + (f" — laukia {n}" if n else "")))
+    if any(s.enabled for s in items) and cfg["MODE"] == "immediate" and cfg["AUTOTRANSCRIBE"] \
+            and not services.is_enabled(services.SOURCES_TIMER):
+        out.append(R(WARN, "sekamų aplankų timer'is išjungtas — nauji failai bus transkribuoti tik naktį",
+                     "make install-units && systemctl --user enable --now diktatura-sources.timer"))
+    return out
+
+
 def check_git(run=_run) -> list:
     if not (paths.REPO / ".git").exists():
         return []
@@ -204,7 +229,8 @@ def check_resources(mem_avail_gb: float, disk_free_gb: float, model: str) -> lis
         out.append(R(WARN, f"RAM laisva tik {mem_avail_gb:.1f} GB (transkripcijai reikia ~{need:g} GB) — gali swap'inti",
                      "uždaryk naršyklės tabus arba MODE=deferred (naktį) / make model-medium"))
     if disk_free_gb < 2:
-        out.append(R(FAIL, f"diske liko tik {disk_free_gb:.1f} GB — įrašai gali nebeišsisaugoti", "atlaisvink vietos"))
+        out.append(R(FAIL, f"diske liko tik {disk_free_gb:.1f} GB — įrašai gali nebeišsisaugoti",
+                     "atlaisvink vietos; įrašų garsui — Nustatymai → Archyvas → „Seno garso trynimas\" (make cleanup)"))
     elif disk_free_gb < 8:
         out.append(R(WARN, f"diske liko {disk_free_gb:.1f} GB (modelių konversijai reikia ~8–10 GB)", "atlaisvink vietos"))
     else:
@@ -252,6 +278,7 @@ def run_all() -> list:
         ("Balsai", check_voices()),
         ("Nustatymai", check_config()),
         ("Servisai", check_services(cfg)),
+        ("Sekami aplankai", check_sources(cfg)),
         ("Privatumas (git)", check_git()),
         ("Resursai", check_resources(mem_available_gb(), disk_free_gb(paths.DATA_DIR), cfg["MODEL"])),
         ("Vyksta dabar", check_runtime()),

@@ -378,3 +378,37 @@ def test_i4_wipe_dialog_defaults_and_keeps_names(env, win, gtk, monkeypatch):
     assert "Ona: labas" not in win.text.text() and "Ištrinta" in st.msg.get_text()
     answer(st, Gtk.ResponseType.OK, toggle={reset.RECORDINGS: False})               # nieko nepažymėta
     assert not st.on_wipe_clicked() and store.counts() == {"Ona": 1}
+
+
+def test_p10_settings_audio_cleanup_preview_and_confirm(env, win, gtk, monkeypatch):
+    """Archyvas → „Seno garso trynimas": gyva suvestinė, pilki nereikalingi laukai; pakeitus — patvirtinimas prieš trinant."""
+    from diktatura import config, reset
+    from diktatura.ui.gtk import Gtk
+    monkeypatch.setattr(reset, "running_transcriptions", lambda: [])
+    old = env.recordings / f"vox_{stamp(30)}.mp3"
+    new = env.recordings / f"vox_{stamp(1)}.mp3"
+    for f in (old, new):
+        f.write_bytes(b"\0" * 2048)
+        f.with_name(f.name.replace(".mp3", ".named.txt")).write_text("[0:00:01] Ona: labas\n")
+        t = time.time() - 3600
+        os.utime(f, (t, t))
+    st = win.settings
+    st.load()
+    w = st.widgets
+    assert not w["AUDIO_KEEP_DAYS"].get_sensitive() and not w["AUDIO_MAX_GB"].get_sensitive()
+    assert "garsas — 2 įr." in st.cleanup_info.get_text()
+    st.set_value("AUDIO_CLEANUP", "age")                                   # dar neišsaugota — tik peržiūra
+    gtk.pump(0.02)
+    assert w["AUDIO_KEEP_DAYS"].get_sensitive() and not w["AUDIO_MAX_GB"].get_sensitive()
+    assert "būtų ištrintas 1 įr." in st.cleanup_info.get_text() and old.exists()
+    seen = answer(st, Gtk.ResponseType.CANCEL)
+    assert not st.save()
+    assert seen["buttons"] == ["Atšaukti", "Išsaugoti ir ištrinti"] and "Tekstai lieka" in seen["text"]
+    assert old.exists() and config.load()["AUDIO_CLEANUP"] == "off" and "neišsaugoti" in st.msg.get_text()
+    answer(st, Gtk.ResponseType.OK)
+    assert st.save() and not old.exists() and new.exists()
+    assert config.load()["AUDIO_CLEANUP"] == "age" and "ištrinta seno garso: 1" in st.msg.get_text()
+    assert old.with_name(old.name.replace(".mp3", ".named.txt")).exists()
+    seen = answer(st, Gtk.ResponseType.CANCEL)                             # kitas nustatymas — be klausimo
+    st.set_value("VOX_SILENCE_SEC", 9)
+    assert st.save() and "dlg" not in seen

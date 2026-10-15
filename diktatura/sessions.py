@@ -4,6 +4,8 @@
 Transkripcijos šalia garso: <bazė>.named.txt (stereo, su vardais), <bazė>.txt (mono),
 <bazė>.clean.dialog.txt (senas formatas; grynas .dialog.txt nerodomas).
 Transkripcijos eilutė: „[H:MM:SS] Kalbėtojas: tekstas" (laikas — nuo įrašo pradžios).
+Sekamų aplankų (diktatura.sources) tekstai — atskirame kataloge, vardai bet kokie; garsas ir įrašymo laikas — iš
+<bazė>.src.json (garsas lieka tavo aplanke).
 
 Naudoja ir UI (sistemos python3), ir .venv — todėl tik stdlib.
 """
@@ -31,16 +33,34 @@ def parse_name(name: str):
 
 
 def session_dt(path: Path) -> datetime:
-    """Įrašymo laikas iš failo vardo; jei vardas nestandartinis — failo keitimo laikas."""
+    """Įrašymo laikas iš failo vardo; sekamo aplanko — iš .src.json; kitaip — failo keitimo laikas."""
     p = parse_name(Path(path).name)
     if p:
         return p[1]
+    rec = source_meta(path).get("recorded")
+    if rec:
+        try:
+            return datetime.fromisoformat(rec)
+        except ValueError:
+            pass
     return datetime.fromtimestamp(Path(path).stat().st_mtime)
+
+
+def source_meta(path) -> dict:
+    """Sekamo aplanko transkripcijos metaduomenys (<bazė>.src.json) arba {}."""
+    import json
+    p = Path(path)
+    f = p.with_name(base_name(p.name) + ".src.json")
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
 
 
 def base_name(name: str) -> str:
     """'vox_x.named.txt' -> 'vox_x'; 'vox_x.wav' -> 'vox_x' (žinomi plėtiniai nuimami)."""
-    for suf in TEXT_SUFFIXES + AUDIO_SUFFIXES + (".srt", ".skip"):
+    for suf in TEXT_SUFFIXES + AUDIO_SUFFIXES + (".srt", ".skip", ".peaks", ".src.json"):
         if name.endswith(suf):
             return name[: -len(suf)]
     return name
@@ -70,13 +90,16 @@ def text_files(rec_dir: Path, since=None) -> list:
 
 
 def audio_for(text_path: Path):
-    """Transkripcijos garsas (wav pirmenybė, tada mp3 archyvas) arba None."""
+    """Transkripcijos garsas (wav pirmenybė, tada mp3 archyvas; sekamo aplanko — originalus failas) arba None."""
     text_path = Path(text_path)
     base = text_path.parent / base_name(text_path.name)
     for suf in AUDIO_SUFFIXES:
         a = base.with_name(base.name + suf)
         if a.exists():
             return a
+    src = source_meta(text_path).get("audio")
+    if src and Path(src).exists():
+        return Path(src)
     return None
 
 

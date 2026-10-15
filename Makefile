@@ -21,7 +21,8 @@ SYSD := $(HOME)/.config/systemd/user
 APPS := $(or $(DIKTATURA_APPS_DIR),$(or $(XDG_DATA_HOME),$(HOME)/.local/share)/applications)
 SC := systemctl --user
 UNITS := diktatura-autorecord.service diktatura-vox.service diktatura-tray.service \
-         diktatura-nightly.service diktatura-nightly.timer diktatura-asr.service
+         diktatura-nightly.service diktatura-nightly.timer diktatura-asr.service \
+         diktatura-sources.service diktatura-sources.timer
 RECORDERS := diktatura-vox diktatura-autorecord
 
 .DEFAULT_GOAL := help
@@ -29,7 +30,7 @@ RECORDERS := diktatura-vox diktatura-autorecord
 ## ——— Pagalba ———
 help: ## Parodyti visas komandas
 	@echo "Diktatūra — komandos:"
-	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 	 awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-20s\033[0m %s\n",$$1,$$2}'
 	@echo; echo "Nustatymai:"; $(CFG) show 2>/dev/null || true
 
@@ -46,7 +47,7 @@ status: ## Bendra būsena (režimas, servisai, nustatymai, įrašai, RAM/diskas)
 	@echo "═══ DIKTATŪRA — BŪSENA ═══"
 	@printf "Režimas: "; if $(SC) is-active -q diktatura-vox; then echo "🎙️ VOX (balso aktyvumas)"; \
 	 elif $(SC) is-active -q diktatura-autorecord; then echo "💬 SLACK (skambučių aptikimas)"; else echo "įrašymas išjungtas"; fi
-	@for u in $(RECORDERS) diktatura-tray diktatura-nightly.timer; do \
+	@for u in $(RECORDERS) diktatura-tray diktatura-nightly.timer diktatura-sources.timer; do \
 	  e=$$($(SC) is-enabled $$u 2>/dev/null); printf "  %-26s %s / %s\n" "$$u" "$$($(SC) is-active $$u 2>/dev/null)" "$${e:-neįdiegtas}"; done
 	@$(SC) list-timers diktatura-nightly.timer --no-pager 2>/dev/null | grep diktatura-nightly | sed 's/^/  naktinis: /' || true
 	@echo "─ Nustatymai ─"; $(CFG) show
@@ -130,6 +131,17 @@ transcribe-pending: ## Sutranskribuoti VISUS įrašus be teksto dabar
 	@bash $(REPO)/bin/transcribe-pending.sh
 transcribe: ## Sutranskribuoti vieną failą:  make transcribe FILE=.../vox_xxx.wav
 	@test -n "$(FILE)" || { echo "Nurodyk FILE=..."; exit 1; }; bash $(REPO)/bin/transcribe-file.sh "$(FILE)"
+progress: ## ⏳ Kas transkribuojama, kiek liko (dabartinis failas ir visa eilė; langelis — Tekstas → „⏳ Transkripcija")
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.progress
+cleanup: ## Ištrinti seną garsą pagal nustatymus (AUDIO_CLEANUP; tekstai lieka):  make cleanup [DRY=1 — tik parodyti]
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.cleanup $(if $(DRY),--dry-run)
+mcp: ## 🔌 Kaip prijungti tekstus prie AI kliento (Claude Code ir kt.): MCP serveris, tik skaito — pats neregistruoja
+	@echo "MCP serveris (stdio, tik skaito tekstus): $(REPO)/bin/mcp-server.sh"; \
+	 echo "Claude Code:   claude mcp add diktatura -- $(REPO)/bin/mcp-server.sh"; \
+	 echo "Kiti klientai: {\"mcpServers\": {\"diktatura\": {\"command\": \"$(REPO)/bin/mcp-server.sh\"}}}"; \
+	 echo "⚠ Ką AI perskaito per šį serverį, patenka į jo pokalbį — debesų AI atveju į jo debesį."
+sources: ## Sekami aplankai (telefonas, laikrodis…): kiek failų, tekstų ir kiek laukia (pridėti — Nustatymuose)
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.sources list
 stop-transcribe: ## Sustabdyti vykstančias transkripcijas
 	@k=0; pkill -f "bin/transcribe-pending[.]sh" && k=1; pkill -f "bin/transcribe-file[.]sh" && k=1; \
 	 pkill -f "diktatura[.]asr[.]" && k=1; [ $$k = 1 ] && echo "🛑 transkripcijos sustabdytos" || echo "(nebuvo ką stabdyti)"
@@ -216,7 +228,7 @@ fixtures: ## Atsisiųsti LT kalbos testų klipus (Common Voice, CC0, ~220 KB; ne
 .PHONY: help desktop speakers-migrate speakers-relabel doctor debug-on debug-off dlogs status recordings logs tlogs text settings training mode-vox mode-slack mode-off start stop restart rec-toggle \
         config set config-edit config-reset auto-on auto-off immediate defer model-azuolas model-medium \
         asr-server-on asr-server-off \
-        transcribe-pending transcribe stop-transcribe nightly-on nightly-off nightly-now \
+        transcribe-pending transcribe progress cleanup sources mcp stop-transcribe nightly-on nightly-off nightly-now \
         tray-on tray-off tray-restart speakers name-unknown assign enroll \
         deps setup models model-convert install-units install uninstall hooks test-privacy \
         test test-full test-e2e fixtures

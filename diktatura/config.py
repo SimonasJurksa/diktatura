@@ -22,7 +22,7 @@ LINE = re.compile(r"^\s*([A-Z][A-Z0-9_]*)\s*=\s*([^#\s]*)")
 @dataclass(frozen=True)
 class Setting:
     key: str
-    kind: str                       # int | float | bool | choice
+    kind: str                       # int | float | bool | choice | words (žodžiai per kablelį, be tarpų)
     group: str
     label: str
     help: str = ""
@@ -45,6 +45,20 @@ SCHEMA = (
             choices=("light", "dark", "contrast", "compact"),
             choice_labels=("Šviesi (kaip sistemoje)", "Tamsi", "Didelis kontrastas ir šriftas",
                            "Kompaktiška (mažam ekranui)")),
+    Setting("WAVEFORM", "bool", "Išvaizda", "Garso banga Tekste",
+            "Virš teksto — pasirinktos sesijos banga: tu ir kolegos atskirai, kalbėtojų spalvomis, su eilučių žymėmis. "
+            "Spragtelėjus bangą — groja nuo tos vietos; ratukas — artinti. Sesija pasirenkama spragtelėjus jos eilutę "
+            "(kitaip — naujausia). Įjungti / išjungti galima ir mygtuku „🌊 Banga\"."),
+    Setting("REC_PILL", "bool", "Išvaizda", "Įrašymo indikatorius ekrano kampe",
+            "Kol įrašoma (VOX ar Slack) — mažas langelis su gyva garso banga ir laikmačiu (ar mane girdi?); baigus — "
+            "transkripcijos eiga arba „transkribuos naktį\". Spragtelėjus — atidaromas Tekstas, ✕ — paslėpti iki kito įrašo."),
+    # ── Tekstas ──
+    Setting("CLEAN_VIEW", "bool", "Tekstas", "Švarus tekstas (be užpildų)",
+            "Tekste nerodyti „ee\", „mhm\", „aaa\" ir pasikartojimų („aš aš aš\" -> „aš\"); eilutės iš vien užpildų "
+            "slepiamos. Failai nekeičiami — perjungiama ir mygtuku „✨ Švarus\"."),
+    Setting("FILLER_WORDS", "words", "Tekstas", "Papildomi užpildų žodžiai",
+            "Švariame rodinyje dar praleisti šiuos žodžius (per kablelį, be tarpų), pvz. nu,tipo,žinai,žodžiu. "
+            "Šnekos garsai (e, ee, mhm…) praleidžiami visada."),
     # ── Įrašymas ──
     Setting("VOX_SILENCE_SEC", "float", "Įrašymas", "Tylos sekundės iki failo uždarymo",
             "Kiek sekundžių tylos reikia, kad VOX užbaigtų įrašą. Diktavimui ~5, pokalbiams 30–60.", 1, 600),
@@ -107,7 +121,19 @@ SCHEMA = (
     Setting("ARCHIVE_MP3", "bool", "Archyvas", "Archyvuoti į mp3", "Po transkripcijos wav keičiamas mažu mp3 (taupo vietą)."),
     Setting("ARCHIVE_KBPS", "int", "Archyvas", "mp3 kokybė (kbps)", "Kalbai pakanka 48–64.", 16, 320),
     Setting("RETENTION_DAYS", "int", "Archyvas", "Teksto lange rodomos dienos",
-            "Senesni tekstai iš lango nutrinami (failai lieka).", 1, 365),
+            "Senesni tekstai iš lango nutrinami (failai lieka; įrašus trina tik „Seno garso trynimas\" žemiau).", 1, 365),
+    Setting("AUDIO_CLEANUP", "choice", "Archyvas", "Seno garso trynimas",
+            "Trinami tik garso failai (wav ir mp3) — tekstai lieka. Niekada netrinama: dabar rašomas ar transkribuojamas "
+            "įrašas, dar be teksto, o „pagal vietą\" — ir naujausias įrašas, net jei jis vienas didesnis už ribą. "
+            "Tikrinama po kiekvienos transkripcijos ir naktį.",
+            choices=("off", "age", "size"),
+            choice_labels=("Netrinti", "Pagal amžių (senesnį nei nurodyta dienų)",
+                           "Pagal vietą (kai įrašai užima daugiau nei nurodyta GB)")),
+    Setting("AUDIO_KEEP_DAYS", "int", "Archyvas", "Laikyti garsą (dienų)",
+            "Naudojama, kai trynimas „pagal amžių\": senesnių įrašų garsas ištrinamas.", 1, 3650),
+    Setting("AUDIO_MAX_GB", "float", "Archyvas", "Vieta įrašams (GB)",
+            "Naudojama, kai trynimas „pagal vietą\": viršijus ribą, trinami seniausi įrašai. Skaičiuojamas visas įrašų "
+            "katalogas (garsas ir tekstai).", 0.5, 2000, step=0.5),
     # ── Debug ──
     Setting("DEBUG", "bool", "Debug", "Debug režimas",
             "Detalus žurnalas ~/.local/state/diktatura/debug.log: įrenginiai, garso lygiai, sprendimai, "
@@ -159,6 +185,11 @@ def coerce(key: str, value: str):
         if v not in s.choices:
             raise ValueError(f"{s.label}: galimos reikšmės {', '.join(s.choices)}, gauta „{v}“")
         return v
+    if s.kind == "words":
+        v = ",".join(w.strip() for w in v.split(",") if w.strip())
+        if not re.fullmatch(r"[^\W\d_]+(?:-[^\W\d_]+)*(?:,[^\W\d_]+(?:-[^\W\d_]+)*)*|", v):
+            raise ValueError(f"{s.label}: tik žodžiai per kablelį (be tarpų, skaičių ir ženklų), gauta „{v}“")
+        return v.lower()
     try:
         num = int(v) if s.kind == "int" else float(v)
     except ValueError:

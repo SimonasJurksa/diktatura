@@ -1,5 +1,6 @@
 """C6–C8, B6, D3 (VOX): tikras `python -m diktatura.audio.vox` su sintetiniu capture (DIKTATURA_CAPTURE_CMD)."""
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -65,7 +66,7 @@ def test_c8_state_file_and_clean_sigterm(env):
     env.write_conf(AUTOTRANSCRIBE=1, MODE="immediate")
     state = env.run / "recording"
     p = subprocess.Popen(VOX, env={**os.environ, "DIKTATURA_CAPTURE_CMD":
-                                   capture("silence:-70:3", "speech:-20:30", hold=True)},
+                                   capture("silence:-70:3", *["speech:-20:2 silence:-70:0.5"] * 13, hold=True)},
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         assert wait_for(state.exists), "būsenos failas turi atsirasti įrašant"
@@ -121,3 +122,109 @@ def test_d3_vox_deferred_and_disabled_do_not_transcribe(env, fake_asr):
         time.sleep(0.5)
         assert len(vox_files(env)) == 1 and not vox_files(env, "named.txt")
         assert msg in env.log("autorecord")
+
+
+# ── C10: pasenusios triukšmo grindys tikrame daemon'e (2026-10-13 incidentas) ──
+
+def test_c10_stale_floor_background_never_becomes_endless_recording(env):
+    env.write_conf(AUTOTRANSCRIBE=0, VOX_SILENCE_SEC=5)
+    # grindys išmoktos, kai mikrofonas buvo nutilęs (−92), tada 2 s kalbos ir 30 s pastovaus ventiliatoriaus (−66)
+    r = run_vox(env, capture("silence:-92:3:LR", "speech:-20:2", "noise:-66:30:LR"))
+    assert r.returncode == 3
+    [f] = vox_files(env)
+    dur = len(audio.read_wav(f)[0]) / 16000
+    assert dur < 13, f"įrašas turėjo užsidaryti netrukus po kalbos, o truko {dur:.1f} s"
+    log = env.log("autorecord")
+    assert re.search(r"↕ fonas garsesnis nei išmoktas triukšmo lygis \(-9\d → -66 dB\)", log)   # −92 + int16 kvantavimas
+    assert log.count("🔴 garsas aptiktas") == 1                  # ventiliatorius naujo įrašo nebeatidaro
+
+
+def test_c10_stale_floor_background_only_file_deleted(env):
+    env.write_conf(AUTOTRANSCRIBE=0)
+    run_vox(env, capture("silence:-92:3:LR", "noise:-66:30:LR"))
+    assert vox_files(env) == [] and "per trumpas" in env.log("autorecord")
+
+
+# ── C11: garso įrenginių sekimas (2026-10-13: PulseAudio perkėlė „sistemos" srautą į mikrofoną) ──
+
+OUTPUTS = """Source Output #300
+\tDriver: protocol-native.c
+\tSource: 4
+\tProperties:
+\t\tmedia.name = "record"
+\t\tapplication.name = "diktatura-vox-mic"
+\t\tapplication.process.id = "4242"
+Source Output #301
+\tSource: 4
+\tProperties:
+\t\tapplication.name = "diktatura-vox-sistema"
+\t\tapplication.process.id = "4242"
+Source Output #302
+\tSource: 0
+\tProperties:
+\t\tapplication.name = "Slack"
+\t\tapplication.process.id = "999"
+"""
+SOURCES = "0\tspk.monitor\tmodule-alsa-card.c\ts16le 2ch 48000Hz\tSUSPENDED\n4\tmic.a\tmodule-alsa-card.c\ts16le 2ch 48000Hz\tRUNNING\n"
+
+
+def test_c11_parse_streams_and_mismatch():
+    from diktatura.audio import vox
+    streams = vox.parse_streams(OUTPUTS, SOURCES, 4242)
+    assert streams == {vox.APP_MIC: "mic.a", vox.APP_SYS: "mic.a"}       # kito proceso (Slack) srautas nematomas
+    devs = ("mic.a", "spk.monitor")
+    assert vox.mismatch(devs, devs, streams) == \
+        "PulseAudio perkėlė sistemos garso srautą į mic.a (turi būti spk.monitor)"
+    assert vox.mismatch(devs, devs, {vox.APP_MIC: "mic.a", vox.APP_SYS: "spk.monitor"}) is None
+    assert vox.mismatch(devs, devs, {}) is None                           # srautų dar nėra — nieko nedarom
+    assert vox.mismatch(devs, ("mic.b", "spk.monitor"), {}) == "pasikeitė numatytieji mikrofonas: mic.a → mic.b"
+    assert vox.mismatch(devs, ("mic.a", "usb.monitor"), {}) == \
+        "pasikeitė numatytieji garsiakalbiai: spk.monitor → usb.monitor"
+    assert vox.parse_streams(OUTPUTS, "", 4242) == {vox.APP_MIC: "#4", vox.APP_SYS: "#4"}
+
+
+def test_c11_device_problem_ignores_pactl_failure(monkeypatch):
+    from diktatura.audio import vox
+
+    def boom(*a):
+        raise OSError("pulse nepasiekiamas")
+    monkeypatch.setattr(vox, "pactl", boom)
+    assert vox.device_problem(1, ("mic.a", "spk.monitor")) is None
+
+
+def test_c11_new_recording_path_never_overwrites(env):
+    from diktatura.audio import vox
+    a = vox.new_recording_path()
+    a.write_bytes(b"x")
+    b = vox.new_recording_path()
+    assert b != a and b.name.startswith("vox_") and not b.exists()
+
+
+def test_c11_device_change_closes_recording_and_restarts_capture(env, monkeypatch):
+    """main() procese: ~5 s įrašo -> „pasikeitė mikrofonas" -> įrašas išsaugomas, capture paleidžiamas iš naujo,
+    vėl 2 s kalibracija, antras įrašas — atskiras failas (ta pati sekundė neperrašo)."""
+    from diktatura.audio import vox
+    env.write_conf(AUTOTRANSCRIBE=0, VOX_SILENCE_SEC=5)
+    monkeypatch.delenv("DIKTATURA_CAPTURE_CMD", raising=False)
+    devs = [("mic.a", "spk.monitor"), ("mic.b", "spk.monitor")]
+    cmds = [capture("silence:-70:3", "speech:-20:4", hold=True),
+            capture("silence:-70:3", "speech:-20:2", "silence:-70:6")]
+    checks = []
+
+    def problem(pid, have):
+        checks.append(have)
+        return "pasikeitė numatytieji mikrofonas: mic.a → mic.b" if len(checks) == 5 else None
+    monkeypatch.setattr(vox, "capture_devices", lambda: devs.pop(0))
+    monkeypatch.setattr(vox, "capture_cmd", lambda d=None: (cmds.pop(0).split(), f"mic={d[0]}"))
+    monkeypatch.setattr(vox, "device_problem", problem)
+    monkeypatch.setattr(vox, "DEVICE_EVERY", 10)
+    monkeypatch.setattr(vox, "SWITCH_GAP", 0)
+    assert vox.main() == 3                                     # antras capture baigėsi
+    assert checks[0] == ("mic.a", "spk.monitor") and checks[-1] == ("mic.b", "spk.monitor")
+    first, second = vox_files(env)
+    assert 2 <= len(audio.read_wav(first)[0]) / 16000 < 4     # pre-roll + ~2 s kalbos iki perjungimo
+    assert len(audio.read_wav(second)[0]) / 16000 > 7
+    log = env.log("autorecord")
+    assert "🔀 pasikeitė numatytieji mikrofonas: mic.a → mic.b — perjungiu garso capture" in log
+    assert "🎧 klausau iš naujo: mic=mic.b" in log and log.count("🔴 garsas aptiktas") == 2
+    assert not (env.run / "recording").exists()

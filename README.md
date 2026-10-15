@@ -18,7 +18,8 @@ Pavadinimas — kalambūras: *dikta*-vimas + *diktatūra* 🙂.
 
 Vienas langas „Diktatūra" su trimis skiltimis. **📄 Tekstas** — gyvai besipildančios transkripcijos: žmonės
 atpažinti vardais (kiekvienas sava spalva), sesijų skyrikliai, paieška, filtrai, žymės ir grojimas nuo bet kurios
-eilutės:
+eilutės. Viršuje — **🌊 garso banga**: tu ir kolegos atskirai, kalbėtojų spalvomis, su eilučių žymėmis; spragtelėjus
+bangą — groja nuo ten (ratukas — artinti):
 
 ![Diktatūros teksto langas](docs/img/text.png)
 
@@ -28,7 +29,8 @@ Diktatūra jos neįrašinėja):
 
 ![Apmokymai](docs/img/training.png)
 
-**⚙ Nustatymai** — viskas su paaiškinimais lietuviškai; pakeitimai veikia iškart, be perkrovimo. Apačioje
+**⚙ Nustatymai** — viskas su paaiškinimais lietuviškai; pakeitimai veikia iškart, be perkrovimo. Viršuje —
+**🔍 paieška** (Ctrl+F): lieka tik susiję nustatymai, rastas tekstas paryškinamas („zodziai" randa ir „žodžiai"). Apačioje
 „Atstatymas ir duomenys": atkurti numatytus nustatymus ir **ištrinti įrašus ir tekstus** (pradėti kaupti iš naujo;
 vardų atpažinimas lieka, nebent pažymėsi) — abu tik patvirtinus:
 
@@ -54,7 +56,8 @@ nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik
 ## Ką daro
 
 - 🤖 **Pats įsijungia** — aptinka Slack skambutį ir automatiškai pradeda/sustabdo įrašymą; arba **VOX** režimas
-  (balso aktyvumas) diktavimui bet kada. Veikia fone (systemd), startuoja po kompiuterio perkrovimo.
+  (balso aktyvumas) diktavimui bet kada — prisitaiko prie kambario triukšmo (ir kai jis pasikeičia) bei garso
+  įrenginių (dokas, ausinės). Veikia fone (systemd), startuoja po kompiuterio perkrovimo.
 - 📝 **Transkripcija lietuviškai** — [Ąžuolas](https://huggingface.co/akisviete/azuolas-whisper-lt)
   (whisper-large-v3 + LIEPA-3) per faster-whisper (CT2, int8). Geriausia LT kokybė (testuose WER ~2–3 %).
 - 👥 **Atpažįsta žmones vardais** — stereo (tavo mikrofonas vs sistemos garsas) + balso „pirštų atspaudai"
@@ -68,15 +71,38 @@ nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik
 - 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi; paieška (ir regex), filtrai pagal
   kalbėtoją ir laikotarpį (iki viso archyvo), ⭐ žymės ir ☐ užduotys, **▶ grojimas nuo eilutės**,
   📊 statistika (kas kiek kalbėjo; galima nunulinti), 💾 eksportas į .txt / .md.
+- 🌊 **Garso banga** — Tekste (pasirinktos sesijos: tu / kolegos, kalbėtojų spalvos, spragtelėk — groja nuo ten) ir
+  ⏳ eigos langelyje (apdorota dalis ryški, likusi — išblukusi).
+- 💊 **Įrašymo indikatorius** ekrano kampe — kol įrašoma: gyva banga ir laikmatis („ar mane girdi?"); po to —
+  „Transkribuojama 43 %" arba „transkribuos naktį". Išjungiamas Nustatymuose.
+- 📱 **Sekami aplankai** — telefono, laikrodžio, diktofono ar studijos mikrofono įrašai (m4a, mp3, ogg, opus, flac,
+  wav…): nurodai aplanką Nustatymuose, nauji failai transkribuojami pagal tą patį „iškart / naktį", kalbėtojai — pagal
+  balsus. Tekstai **atskirai** — kiekvienam aplankui savas skirtukas Tekste (sava paieška, statistika, eksportas). Tavo
+  failai nekeičiami ir netrinami.
+- 🔁 **Transkribuoti iš naujo** (dešinys klik ant eilutės) — pvz. užregistravus naujus balsus; senas tekstas lieka,
+  kol naujas paruoštas, ir jį galima grąžinti (↩).
+- ✨ **Švarus tekstas** — be „ee", „mhm", „aaa" ir pasikartojimų („aš aš aš" → „aš"); savi žodžiai (pvz. „nu, tipo")
+  — Nustatymuose. Be dirbtinio intelekto, taisyklėmis; failai nekeičiami.
+- 🔌 **MCP serveris** (pasirinktinai) — AI klientas (pvz. Claude Code) gali ieškoti tavo tekstuose („ką vakar sakė
+  Jonas apie migraciją?"). Tik skaito; prijungi pats — `make mcp`.
 - 🌙 **Lankstus režimas** — iškart po skambučio arba naktinis paketinis transkribavimas (01:30);
   pasirinktinai — nuolat įkrautas modelis greitesniam tekstui po diktavimo.
 - 💾 Po transkripcijos garsas suspaudžiamas į mp3 (vietos taupymui); tušti — ištrinami.
+  **Seno garso trynimas** (Nustatymai → Archyvas): pagal amžių (pvz. senesnis nei 7 d.) arba pagal vietą (pvz. įrašams
+  ne daugiau 5 GB — trinami seniausi, naujausias lieka visada). Trinamas tik garsas — tekstai lieka; prieš pirmą
+  trynimą parodoma, kiek ir ko bus ištrinta. Pilname diske įrašymas nebelūžta — palaukia, kol atsiras vietos.
+- ⏳ **Transkripcijos eiga** (Tekstas → „⏳ Transkripcija" arba ikonos meniu): kaip Midnight Commander kopijuojant — juosta
+  dabartiniam failui (etapas, kiek garso apdorota) ir visai eilei, kiek liko ir kada baigs. Prognozė mokosi iš šio
+  kompiuterio greičio ir prisitaiko gyvai (CPU apkrautas → ilgiau). Galima „⏭ Praleisti šį" ar „⏹ Sustabdyti viską"
+  — tokie failai lieka naktiniam transkribavimui. Terminale — `make progress`.
 - 🩺 `make doctor` — savitikra su patarimais; debug žurnalas problemoms gaudyti.
 
 ## Privatumas
 
 Viskas vyksta **lokaliai**. Garsas, transkripcijos ir balso „pirštų atspaudai" niekada
 neišeina iš tavo kompiuterio. Jokio debesies.
+Vienintelė išimtis — jei pats prijungsi **MCP serverį** prie debesų AI (pvz. Claude): tada tai, ką AI perskaito iš tavo
+tekstų, patenka į jo pokalbį (ir debesį). Numatytai niekur neprijungta.
 
 ## Reikalavimai
 
@@ -109,6 +135,10 @@ make mode-slack           # 💬 Slack skambučių aptikimas
 make mode-vox             # 🎙️ balso aktyvumas (diktavimui, be Slack)
 make immediate | defer    # transkribuoti iškart / naktį (01:30)
 make transcribe-pending   # sutranskribuoti viską dabar
+make progress             # ⏳ kas transkribuojama, kiek liko (failui ir visai eilei)
+make cleanup DRY=1        # 🧹 ką ištrintų seno garso trynimas (be DRY — ištrinti; tekstai lieka)
+make sources              # 📱 sekami aplankai: kiek failų, tekstų, kiek laukia (pridėti — Nustatymuose)
+make mcp                  # 🔌 kaip prijungti tekstus prie AI kliento (tik skaitymas; pats neregistruoja)
 make text                 # langas: 📄 Tekstas   (make training — 🎓 Apmokymai, make settings — ⚙ Nustatymai)
 make tray-on              # grąžinti ikoną (jei meniu paspaudei „Išeiti" — įrašymas tuo metu veikia toliau)
 make desktop              # „Diktatūra" programų meniu (prisegama prie doko: grąžina ikoną ir atidaro langą)
@@ -138,9 +168,10 @@ Balsai laikomi lokaliai (`~/.local/share/diktatura/speakers/`, **niekada ne repo
 ## Architektūra (trumpai)
 
 - `diktatura/` — Python paketas: `audio/` (VOX, kalbos filtras), `asr/` (transkripcija + vardai, nuolatinis serveris),
-  `speakers/` (balsų atpažinimas, saugykla), `ui/` (ikona, langas: Tekstas · Apmokymai · Nustatymai),
-  `paths.py` (visi keliai), `config.py` (nustatymai), `doctor.py` (savitikra).
-- `bin/` — shell įėjimai (Slack daemon, transkripcijos eilė, naktinis, rankinis įrašymas).
+  `speakers/` (balsų atpažinimas, saugykla), `ui/` (ikona, langas: Tekstas · Apmokymai · Nustatymai, banga,
+  įrašymo indikatorius), `paths.py` (visi keliai), `config.py` (nustatymai), `doctor.py` (savitikra), `sources.py`
+  (sekami aplankai), `waveform.py` (bangos), `fillers.py` (švarus tekstas), `mcp_server.py` (MCP).
+- `bin/` — shell įėjimai (Slack daemon, transkripcijos eilė, naktinis, rankinis įrašymas, MCP serveris).
 - `systemd/` — servisų šablonai; `tools/` — modelių konversija/atsisiuntimas, benchmark.
 - `Makefile` — visas valdymas. Numatytieji nustatymai — `config/diktatura.conf.default`.
 - Plačiau: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Prisidėti: [CONTRIBUTING.md](CONTRIBUTING.md)

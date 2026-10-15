@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅**
 
 ---
 
@@ -326,7 +326,137 @@ registruoti balsai apačioje vos matosi — vertikaliai siaura".
 
 ---
 
+## Etapas 11 — Seno garso trynimas + pilnas diskas ✅ (2026-10-12)
+
+Savininkas: „kodėl tušti wav vis dar yra iš šeštadienio? Reikia wav ir mp3 trynimo po kurio laiko: pagal failo laiką
+(pvz. po savaitės) arba pagal vietą (pvz. 5 GB recordings katalogui), išskyrus jei tai vienas failas".
+- **Priežastis (žurnalai):** 2026-10-10 18:22–19:05 diskas buvo pilnas (`No space left on device`; užpildė ne
+  Diktatūra). VOX lūždavo per pirmą `writeframes`, systemd perkraudavo → 19 × 0 B `vox_*.wav`; naktinis juos kas naktį
+  bandė transkribuoti ir palikdavo („Invalid data").
+- **VOX / Slack nebelūžta:** laisvos vietos < 200 MB — naujas įrašas nepradedamas (vienas pranešimas); `ENOSPC` įrašo
+  viduryje — išsaugoma tai, kas spėjo įsirašyti (wav antraštė pataisoma), VOX dirba toliau.
+- **Tušti failai** (≤ 44 B) trinami: `transcribe-file.sh` jų nebetranskribuoja, `diktatura.cleanup` trina visada.
+- **Seno garso trynimas** (`AUDIO_CLEANUP` = off / age / size, `AUDIO_KEEP_DAYS`=7, `AUDIO_MAX_GB`=5; numatytai off):
+  trinamas tik garsas, tekstai lieka; „pagal vietą" naujausias įrašas niekada netrinamas; saugomi rašomas,
+  transkribuojamas ir dar be teksto. Po kiekvienos transkripcijos ir naktį; `make cleanup [DRY=1]`.
+  Nustatymuose — gyva suvestinė ir patvirtinimas prieš trinant.
+- Testai: `tests/test_cleanup.py` (P1–P9), `tests/ui/test_main_window.py` (P10).
+
+---
+
+## Etapas 12 — Transkripcijos eiga ir prognozė + regresijos testai ✅ (2026-10-12)
+
+Savininkas: „progress bar ir kiek truks; jei keli failai eilėje — vieno failo ir visų, su skirtingais progressbar'ais,
+kaip kopijuojant su Midnight Commander; atskirame modale kaip statistika. CPU labai apkrautas — nežinau, laukti ar
+išjungti, jei suksis dar valandas. Ir daugiau testų, kad veikiantys dalykai nepasikeistų be mano žinios".
+- **`diktatura.progress`** (stdlib): kas vyksta — iš procesų (eilė = `transcribe-file.sh` + `flock`, naktinis sąrašas);
+  eiga — ASR modulių `Reporter` (etapai, Whisper — po kiekvieno segmento); prognozė — šio kompiuterio greičiai
+  (`timing.json`, švelninami) × garso / kalbos trukmė, gyvai koreguojama, sulėtėjimas taikomas visai eilei.
+- **⏳ langelis** (`ui/progress_dialog.py`): dvi juostos (failas / visa eilė), praėjęs / likęs / pabaiga, eilės sąrašas,
+  „⏭ Praleisti šį" / „⏹ Sustabdyti viską" (su patvirtinimu; failai lieka naktiniam). Teksto mygtukas ir ikonos meniu
+  rodo „43 % · liko ~1 val. · eilėje 4". `make progress` — terminale.
+- **Matavimas:** šiame kompiuteryje Ąžuolas — 1–2.6× lėčiau nei realiu laiku (RTF iš 88 transkripcijų žurnale), t. y.
+  2 val. įrašas ≈ 3–4 val. Numatytieji greičiai pagal tai; istorija juos tikslina.
+- **Regresija:** `tests/test_regression.py` (S1–S8) ir `tests/ui/test_regression_ui.py` užrakina numatytuosius
+  nustatymus, `make` komandas, teksto / eksporto formatą, mygtukus, meniu, Nustatymų grupes, eilės taisyklių
+  sutapimą Python ↔ bash. Iškart rado seną klaidą: `make help` nerodė `test-e2e` (šablone trūko skaitmenų).
+- Incidentas (mano klaida bandant): `pkill -f "^flock 9$"` nužudė tikros eilės `flock` → darbai transkribavo
+  lygiagrečiai; sustabdyta, du įrašai grąžinti į eilę, užteršta prognozės istorija išvalyta (ARCHITECTURE gotchas).
+- Testai: `tests/test_progress.py` (Q1–Q12), `tests/ui/test_progress_ui.py` (Q13–Q18); viso `make test` — 285.
+
+---
+
+## Etapas 12.1 — VOX: nesibaigiantis įrašas ir perkeltas sistemos garsas ✅ (2026-10-13)
+
+Savininkas: „kodėl įrašas vis dar aktyvus, kai aš jau seniai nebekalbu ir buvo daugiau nei 5 s tylos?"
+- **Priežastis:** po doko atjungimo/prijungimo (2026-10-12 20:51) mikrofonas ~13 val. davė −94 dB, VOX išmoko
+  grindis −92 dB; mikrofonui atgijus fonas (−66 dB) buvo virš išlaikymo slenksčio → įrašas nebeužsidarė (6.4 val.).
+  Be to, PulseAudio perkėlė „sistemos garso" srautą į mikrofoną. Smulkiau — ARCHITECTURE §5 gotchas.
+- **VOX:** grindys keliamos įrašo metu, kai ~10 s pastovus fonas virš slenksčio (`VoxGate._refloor`); kas ~10 s
+  tikrinama, ar capture klauso numatytojo mikrofono ir garsiakalbių monitoriaus — jei ne, capture paleidžiamas iš
+  naujo; atskiri pulse srautų vardai; to paties vardo failas nebeperrašomas.
+- **Elgsenos pokytis (testai C5, C8 pakeisti):** idealiai pastovus garsas ilgiau nei 10 s (be jokių pauzių, ±3 dB)
+  nebelaiko įrašo atviro — jis laikomas fonu. Tikra kalba (lygis svyruoja 7–12 dB) — kaip anksčiau.
+- Testai: C9–C11 (`tests/test_vox_gate.py`, `tests/test_vox_daemon.py`), S6 papildytas; viso `make test` — 297.
+
+---
+
+## Etapas 13 — Ką perimti iš voicebox ✅ (2026-10-15)
+
+Savininkas (2026-10-12): „palygink Diktatūrą ir github.com/jamiepine/voicebox — daryti savo ar tobulinti voicebox?
+Ką paimam? Labai patiko vizualus garso bangų grafikas. Manau, Diktatūra LT kalbai pažengusi labiau".
+Šaltiniai: voicebox README, docs.voicebox.sh, voicebox.sh/capture (2026-10-12).
+
+| | Diktatūra | voicebox |
+|---|---|---|
+| Paskirtis | pokalbių / diktavimo fiksavimas → LT tekstas su vardais | balso studija: TTS ir balso klonavimas (8 varikliai) + diktavimas + „Captures" |
+| LT atpažinimas | Ąžuolas (LT fine-tune, ~4.6 % WER CV) | bendras Whisper (Base…Turbo, „99 kalbos"); savo modelio prijungimas neaprašytas |
+| Kas kalba | L/R kanalai + balsų registras, vardai, mokymasis iš pataisymų | nėra (nei diarizacijos, nei vardų) |
+| Kolegų garsas | stereo: mikrofonas + sistemos garsas, aido šalinimas | tik mikrofonas (mic + sistema — roadmap) |
+| Įrašymas | automatinis: VOX, Slack skambučiai, naktinė transkripcija | rankinis / spartusis klavišas (diktavimas) |
+| Linux | gimtoji: GTK, systemd, ikona | tik kompiliuoti pačiam (Python 3.12, Bun, Rust, Tauri); PyTorch |
+| Ši geležis (be CUDA, ~18 GB disko, įtempta RAM) | CTranslate2 int8 | PyTorch CPU — lėčiau ir sunkiau |
+| Vaizdas | tekstas, apmokymai, nustatymai, eiga | React; bangos (WaveSurfer.js), „pill" su gyva banga ir laikmačiu |
+| Integracijos | — | REST API, MCP serveris (transcribe, list captures, speak) |
+| Licencija | MIT | MIT |
+
+**Rekomendacija: toliau tobulinti Diktatūrą, voicebox neforkinti ir į jį nepereiti.** Mūsų vertė (LT modelis, sistemos
+garsas, kas kalba, automatinis įrašymas) voicebox'e neegzistuoja — perkeliant reikėtų perrašyti pipeline į
+FastAPI / React / PyTorch, o Linux jiems antraeilis. Abu MIT — idėjas (ir kodą, su nuoroda) galima laisvai perimti.
+
+Ką perimti (⬜; apimtis: M — maža, V — vidutinė):
+1. 🌊 **Garso bangos Teksto skiltyje** (V) — pasirinktos sesijos dviejų kanalų banga: Tu (L) ir kolegos (R) skirtingomis
+   spalvomis, eilučių žymės laiko ašyje, grojimo žymeklis kartu su „▶ Groti nuo čia", spragtelėjus bangą — groja nuo
+   ten, einama eilutė paryškinama. Daugiau nei voicebox: banga + kalbėtojai + tekstas kartu. Technika: smailių failas
+   `<bazė>.peaks.json` (~10 taškų/s/kanalui) skaičiuojamas transkripcijos metu (.venv — garsas jau atmintyje), seniems
+   įrašams — vieną kartą fone; piešimas `Gtk.DrawingArea` + cairo (sistemos python3 turi pycairo; numpy — ne). Ištrynus
+   seną garsą (AUDIO_CLEANUP) smailės lieka — banga matoma ir be garso.
+2. 💊 **Gyvas įrašymo indikatorius („pill")** (V) — mažas langelis (išjungiamas): gyva banga ir laikmatis, kol VOX įrašo,
+   po to „Transkribuojama 43 %" (iš ⏳ eigos). VOX lygius jau skaičiuoja kas 100 ms — rašytų į `<runtime>/levels`.
+   Atsako į „ar mane girdi?".
+3. 🌊 **Banga ⏳ langelyje** (M, po 1) — apdorota dalis nuspalvinta ant bangos.
+4. 📥 **Failo įkėlimas** (M) — „Pridėti garso failą…" (m4a / mp3 / opus / flac, pvz. iš telefono) → ffmpeg → eilė.
+5. 🔁 **„Transkribuoti iš naujo"** (M) — sesijai: kitu modeliu ar po balsų registracijos (dabar tik `make speakers-relabel`).
+6. 🔌 **MCP serveris tekstams** (M–V) — vietinis (stdio): paieška, sesijų sąrašas, „kas ką sakė" — kad Claude atsakytų
+   „ką vakar sakė Jonas apie migraciją?". Viskas lokaliai.
+7. ✨ **Užpildų valymas be LLM** (M) — taisyklėmis („ee", „mm", „nu", pasikartojimai), rodinys „Švarus / Originalas"
+   (kaip voicebox Raw / Refined).
+Neimam: TTS, balso klonavimą, „Stories" redaktorių, efektus (ne mūsų tikslas); globalų diktavimą ir LLM — anksčiau
+atmesta („Skip"), žr. Q6.
+
+**Savininkas (2026-10-15):** „pradedam nuo pirmo punkto ir darom visus. Taip pat nustatymuose — paieška per nustatymo
+pavadinimą ar aprašymą: lieka tik susiję blokai, ieškomas tekstas paryškinamas. Failo įkėlimas — geriau nurodyti
+papildomus aplankus, kuriuose kaupiasi garso failai (studijos mikrofonas, laikrodis, telefonas), transkribuoti pagal
+nustatymus (iškart / naktį), tekstus laikyti atskirai — Tekste sub-tab'ai pagal aplankus".
+
+**Padaryta** (visa — su testais; `make test` 380):
+1. 🌊 **Banga Tekste** — `diktatura.waveform` (smailės `<bazė>.peaks`, dvejetainis uint8 dBFS, ne `.peaks.json` kaip
+   planuota: 2 val. ≈ 144 KB), `ui.waveform_view` (cairo); skaičiuojama transkripcijos pradžioje, seniems — fone.
+   Spragtelėjus — groja, ratukas — artina, eilutės pažymėtos, kolegų juosta — kalbančiojo spalva. Testai W1–W12.
+2. 💊 **Įrašymo indikatorius** — `ui.pill` (ikonos procese): lygiai skaitomi iš rašomo wav galo (ne `<runtime>/levels`
+   iš VOX, kaip planuota — taip veikia ir Slack režimu, daemon'ų keisti nereikėjo). Testai V1–V7.
+3. 🌊 **Banga ⏳ langelyje** — apdorota dalis ryški (`Reporter` dabar rašo `pos` originalo laiku ir `peaks` kelią).
+   Testai Q19. Rastas ir ištaisytas: „Praleisti" smailių žingsnio metu nesustabdydavo darbo (Q9b).
+4. 📱 **Sekami aplankai** (vietoj „Pridėti failą…", savininko prašymu) — `diktatura.sources`, Nustatymų skiltis, Teksto
+   skirtukai, `diktatura-sources.timer` (kas 2 min, tik „iškart"), naktinis; tavo failai nekeičiami; kalbėtojai pagal
+   balsus (`transcribe_named --source`). Testai T1–T13.
+5. 🔁 **Transkribuoti iš naujo** + ↩ grąžinti ankstesnę (`DIKTATURA_RETRANSCRIBE=1`, `.prev`). Testai X1–X7.
+6. 🔌 **MCP serveris** — `diktatura.mcp_server` (stdio, tik skaito; `make mcp` — tik parodo komandą, niekur
+   neregistruojama). Testai Y5–Y7.
+7. ✨ **Švarus tekstas** — `diktatura.fillers`, `CLEAN_VIEW`, `FILLER_WORDS` (naujas nustatymų tipas „words"),
+   grupė „Tekstas". Testai Y1–Y4, Y8.
+8. 🔍 **Nustatymų paieška** — be lietuviškų raidžių skirtumo, paryškinimas, grupės filtras, Ctrl+F / Esc. Testai N1–N4.
+
+---
+
 ## ❓ Nauji klausimai (su mano rekomendacija)
+
+- ✅ **Q5 — Kuriuos Etapo 13 punktus daryti ir kokia tvarka?** Atsakyta (2026-10-15): visus, nuo bangų; „failo
+  įkėlimas" → sekami aplankai; papildomai — Nustatymų paieška. Padaryta (Etapas 13).
+
+- ❓ **Q6 — Ar persigalvojai dėl anksčiau atmestų globalaus diktavimo ir LLM (santraukos / teksto valymas)?**
+  *Rekomenduoju* palikti atmestus: RAM jau įtempta, o maži vietiniai LLM lietuviškai rašo silpnai. (Neatsakyta —
+  užpildų valymas padarytas be LLM.)
 
 - ❓ **Q1 — Kur laikyti duomenis po pervadinimo?**
   (a) *Rekomenduoju:* **už repo ribų** (Linux standartas XDG): nustatymai `~/.config/diktatura/`, įrašai/balsai/modeliai
@@ -404,10 +534,13 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | C2  | kalbos imitacija (moduliuotas triukšmas, −20 dB) po kalibracijos | atsidaro                                    |
 | C3  | garsas pirmas 2 s (kalibracija)                                  | neatsidaro                                  |
 | C4  | tyla ≥ / < tylos sekundžių                                       | uždaro / neuždaro                           |
-| C5  | tylesnė kalba tarp išlaikymo ir atsidarymo slenksčių             | neuždaro (histerezė)                        |
+| C5  | tylesnė kalba tarp išlaikymo ir atsidarymo slenksčių (< 10 s)    | neuždaro (histerezė)                        |
 | C6  | blyksnis < min trukmės                                           | failas ištrinamas                           |
 | C7  | pre-roll                                                         | failo pradžioje 0.8 s prieš atsidarymą      |
 | C8  | būsenos failas; SIGTERM                                          | sukuriamas/ištrinamas; po SIGTERM išvalytas |
+| C9  | pasenusios grindys (−92) + pastovus fonas (−66); kalba + fonas; pokalbis su pauzėmis; fonas nurimsta; fiksuotas režimas; perkalibravimas | fonas — uždaro po 10 s ir trina; kalba — uždaro ~5 s po jos; pokalbis — neuždaro; grindys vėl leidžiasi; fiksuotas — nesikeičia |
+| C10 | tas pats tikrame daemon'e (sintetinis capture)                   | įrašas < 13 s, žurnale „↕ fonas garsesnis…", naujo įrašo neatidaro |
+| C11 | `pactl` srautų / šaltinių analizė; numatytųjų pasikeitimas; perkeltas srautas; `pactl` klaida; vardų susidūrimas; perjungimas `main()` viduje | priežastis tekstu / None; įrašas išsaugomas, capture paleidžiamas iš naujo, du atskiri failai |
 
 ### D. Slack detekcija (imituota `pactl` išvestis) ✅ — `tests/test_autorecord.py`
 
@@ -523,12 +656,130 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | O6  | Apmokymų skirtukai                                  | „Laukia vardo (N)" / „Registruoti balsai (M)"                 |
 | O7  | `WrapBox`                                           | persikelia kaip tekstas; naikinimas be Python nuorodos neužstringa |
 
+### P. Seno garso trynimas ir pilnas diskas ✅ — `tests/test_cleanup.py`, P10 — `tests/ui/test_main_window.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| P1  | `off`; 0 B / 44 B failai, ką tik atidarytas, rašomas | trinami tik seni tušti; kitkas lieka                       |
+| P2  | `age` 7 d.: wav+mp3, `.skip`, be teksto, rašomas, svetimas failas | senas garsas ištrintas, tekstai lieka; be teksto / rašomas saugomi (be teksto — tik kol `AUTOTRANSCRIBE=1`) |
+| P3  | `size`: seniausi pirmi; riba < vieno įrašo; pakatalogiai | trina iki ribos; naujausias lieka; `bench/` neskaičiuojamas |
+| P4  | 0 B wav į `transcribe-file.sh`; valymas po transkripcijos | ištrintas, ASR nekviečiamas; senas garsas ištrintas po kitos transkripcijos |
+| P5  | naktinis, kai transkribuoti nėra ką                  | valymas vis tiek vyksta                                   |
+| P6  | VOX, laisvos vietos per mažai                         | failai nekuriami, vienas pranešimas, kodas 3 (ne traceback) |
+| P7  | VOX, `ENOSPC` įrašo viduryje                          | įrašyta dalis išsaugota (skaitomas wav), naujas neatidaromas, VOX dirba toliau |
+| P8  | `salvage()`                                          | antraštė pagal failo dydį (pilni kadrai); < 1 s — ištrinama |
+| P9  | Slack, laisvos vietos per mažai                       | skambutis neįrašomas, vienas pranešimas                    |
+| P10 | Nustatymai                                           | suvestinė, pilki laukai; Atšaukti — neišsaugota, nieko neištrinta; patvirtinus — ištrinta; kitas nustatymas — be klausimo |
+
+### Q. Transkripcijos eiga ir prognozė ✅ — `tests/test_progress.py`, UI — `tests/ui/test_progress_ui.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| Q1  | Reporter: etapai, retinamas rašymas, pabaiga / klaida | eigos failas; istorija su etapų trukmėmis; klaida — be pėdsakų; ≤ 50 įrašų |
+| Q2  | greičiai iš istorijos                                | sumų santykis + švelninimas; keli tušti įrašai nemoko „kalbos nėra" |
+| Q3  | etapų planas                                         | praleistas kanalas / be kalbos — 0, modelis nekraunamas    |
+| Q4  | vykdomo prognozė                                     | įprastu greičiu = planas; CPU 2× lėčiau — viskas × 2; tikras greitis nuo ~15 %; viršytas etapas > 0; serija |
+| Q5  | formatavimas                                         | „~1 val. 05 min (≈ 15:00)", kitą dieną su data; santrauka, CLI tekstas |
+| Q6  | tikra eilė (3 darbai)                                | 1 vykdomas + 2 laukia teisinga tvarka; kitos aplinkos darbai nematomi ir nestabdomi |
+| Q7  | eigos failas                                         | etapas, „5:00 / 16:40 garso", pradžia iš failo             |
+| Q8  | naktinis / laukia nakties                            | naktinio sąrašas „naktinis"; be darbų — „Be teksto: N"     |
+| Q9  | „Praleisti šį"                                       | ASR nutrauktas, failas be teksto, kitas pradeda, laikini failai išvalyti |
+| Q10 | „Sustabdyti viską"                                   | visi sustabdyti, laukę NEpradėjo be užrakto; be darbų — nieko |
+| Q11 | ASR moduliai (stereo, mono, klaida)                  | etapų seka, eiga po kiekvieno segmento, istorija; klaida — be eigos failo |
+| Q12 | `make progress` (CLI)                                | būsena tekstu                                             |
+| Q13 | langelis užimtas / tuščias / ASR serveris            | juostos, tekstai, eilė, mygtukų būsenos                    |
+| Q14 | praleisti / sustabdyti                               | be patvirtinimo — nieko; patvirtinus — atlikta, pranešimas |
+| Q15 | langelio ciklas                                      | atsinaujina; uždarius — laikmatis sustoja                  |
+| Q16–Q18 | Teksto mygtukas, vienas langelis, ikonos meniu, `--progress` | užrašas su procentais; antras kartas tik iškelia; meniu punktas; argumentai |
+
+### S. Regresija (užrakinta matoma elgsena) ✅ — `tests/test_regression.py`, `tests/ui/test_regression_ui.py`
+
+| #   | Kas užrakinta                                        |
+| --- | ---------------------------------------------------- |
+| S1  | visi numatytieji nustatymai, tipai, grupės, ribos ir jų tvarka |
+| S2  | `make` komandų sąrašas, `.PHONY`, `make help` rodo visas |
+| S3  | bash skriptų sintaksė, systemd šablonai, visų modulių importas, stdlib moduliai be numpy (sistemos python3) |
+| S4  | transkripcijos eilutės formatas, failų vardai / bazės, rodomi tekstai, wav > mp3, de-dup taisyklės, statistika, .srt laikai |
+| S5  | „Tu" atpažinimas, tekstų kalbėtojai, pending → tavo balsas, eilutės pataisymas, mokymosi kanalo pasirinkimas |
+| S6  | VOX capture komanda ir slenksčiai, grotuvas, servisų būklė, keliai (Python = bash) |
+| S7  | eilės atranka Python (⏳) = bash (naktinis), trynimo taisyklių tekstai, užimti įrašai |
+| S8  | aido poslinkis ir nuotėkio lygis                     |
+| UI  | teksto vaizdas ir eksportas (txt / md) žodis į žodį, mygtukai, Nustatymų grupės, ikonos meniu, paieška, filtrai |
+
+### W. 🌊 Garso banga ✅ — `tests/test_waveform.py`, UI — `tests/ui/test_waveform_ui.py`, Q19 — `tests/test_progress.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| W1  | smailės stereo / mono / mp3, formatas, sugadintas failas, dB skalė | kas kada kalba matosi; įrašyta = perskaityta; None |
+| W2  | CLI / ensure                                         | šviežios — neperskaičiuojama; garsas naujesnis / --force — iš naujo |
+| W3  | stulpeliai piešimui                                  | garsiausias stulpelyje; vien triukšmas neišpučiamas; artinimas |
+| W4  | transkripcijos eilė                                  | `.peaks` prieš ASR; mp3 archyve lieka; tuščias tekstas — ištrinama ir banga; seno garso trynimas bangos nepaliečia |
+| W6  | laikas ↔ x, artinimas / slinkimas, eilutė ties laiku, spalvos, tooltip | tikslu; ≥ 10 s; kolegų juosta — kalbančiojo spalva, tavo eilutė jos nedažo |
+| W7  | piešimas (cairo) ir spragtelėjimai                    | juostos spalvos, žymeklis, neapdorota — išblukusi; spragtelėjus — groja; 2× — visa sesija |
+| W8–W12 | Tekstas: naujausia sesija, pasirinkta eilutė, groti nuo bangos, be garso, „🌊 Banga" | spalvos kaip tekste; smailių nebuvo — suskaičiuotos fone; žymeklis juda; nustatymas išsaugomas |
+| Q19 | ⏳ banga: kiek apdorota pagal etapą, smailių kelias   | Tu → kolegos; vienas kanalas; sena versija — pagal laiką |
+| Q9b | „Praleisti" bangos skaičiavimo metu                   | darbas baigiamas, ASR nepaleidžiamas |
+
+### V. 💊 Įrašymo indikatorius ✅ — `tests/test_pill.py`, UI — `tests/ui/test_pill_ui.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| V1  | wav antraštė (Python, ffmpeg su LIST)                | randamas „data" blokas |
+| V2  | lygiai iš augančio failo                              | tik nauji pilni 100 ms gabalai; ilgas failas — nuo galo |
+| V3  | po įrašo: transkribuojama / eilėje / naktį / išjungta / tekstas / ištrintas | teisingas tekstas arba slepiama |
+| V4–V5 | būsenos: < 1.5 s, įrašoma, po įrašo; ✕; REC_PILL=0 | kosulys nerodomas; ✕ — iki kito įrašo; išjungus — nerodoma |
+| V6–V7 | langelis (banga, juosta) ir ikonos spragtelėjimas  | piešiama; transkribuojant — ⏳, kitaip — Tekstas; klaida ikonos nelaužo |
+
+### T. 📱 Sekami aplankai ✅ — `tests/test_sources.py`, UI — `tests/ui/test_sources_ui.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| T1  | pridėti / keisti / pašalinti; saugikliai              | unikalus id; kartojasi / nėra / duomenų aplankas — klaida |
+| T2  | kurie failai laukia: plėtiniai, paslėpti / .part, poaplankiai, since, dar sinchronizuojami, .skip | tik tinkami ir stabilūs |
+| T3  | įrašymo laikas (vardas, metaduomenys, mtime), .src.json, sesijos garsas / laikas | tavo aplanko garsas; teisingas laikas |
+| T4  | transcribe-file.sh su išvesties baze; tuščias / 0 B   | tekstas ir banga atskirai; tavo failas nepakitęs (SHA-256); .skip, ne trynimas |
+| T5  | transcribe-pending.sh --sources / --if-immediate / naktinis; ⏳ eiga | naktiniu režimu timer'is nieko nedaro; tylus; Python = bash |
+| T6  | timer'is: trūkstami unit'ai įdiegiami; spawn be systemd-run | įjungta / išjungta; ta pati aplinka |
+| T7  | „Ištrinti įrašus ir tekstus"                          | aplankų tekstai ištrinami, tavo garsas — ne |
+| T8  | doctor                                               | nėra / laukia / timer'is išjungtas / aplanko nėra |
+| T10–T13 | Nustatymai ➕ / jungiklis / ✕, Teksto skirtukai, „🔄 Transkribuoti dabar", žymių raktas, Ctrl+F, tema | skirtukas atsiranda / dingsta; tekstai neatsiduria pokalbiuose |
+
+### X. 🔁 Transkribuoti iš naujo ✅ — `tests/test_retranscribe.py`, UI — `tests/ui/test_text_features.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| X1  | naujas tekstas (mp3 įvestis)                          | pakeičia seną; senas — `.prev`; laikinų failų nelieka |
+| X2  | tuščias / žlugęs                                      | senas tekstas ir garsas lieka |
+| X3–X4 | mono (.txt + .srt), sekamas aplankas               | tas pats su mono / išvesties baze |
+| X5–X7 | meniu ir patvirtinimas; senas formatas / vykdomas / be garso; ↩ grąžinti | Atšaukti — nieko; paleidžiama atskirai; sukeičiama abiem kryptimis |
+
+### Y. ✨ Užpildai ir 🔌 MCP ✅ — `tests/test_fillers_mcp.py`, Y8 — `tests/ui/test_text_features.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| Y1  | šnekos garsai, pasikartojimai, vartotojo žodžiai, „e. paštu", didžioji raidė | 14 pavyzdžių žodis į žodį |
+| Y2  | nustatymo tipas „words" (Python ir bash)              | normalizuojama; tarpai / skaičiai / ženklai — klaida |
+| Y3–Y4 | sesijos iš visų šaltinių, filtrai, paieška (regex, kalbėtojas, clean) | teisinga tvarka ir skaičiai |
+| Y5–Y7 | MCP per tikrą stdio: initialize, tools/list, ping, kiekvienas įrankis, klaidos, blogas JSON | protokolas teisingas; klaida — isError, serveris dirba |
+| Y8  | „✨ Švarus" Tekste                                    | rodoma / eksportuojama švariai; Nustatymų pakeitimai pritaikomi; failai nepakeisti |
+
+### N. 🔍 Nustatymų paieška ✅ — `tests/ui/test_settings_search_ui.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| N1  | „zodzi" (be diakritikų)                               | 3 grupės, 3 nustatymai, paryškinta ant „žodži…"; išvalius — viskas atgal |
+| N2  | grupės pavadinimas, raktas, režimo radijo mygtukas, nieko | visa grupė; vienas; „nieko nerasta" |
+| N3  | sekamų aplankų eilutės (kuriamos dinamiškai)          | randamos |
+| N4  | Ctrl+F, Esc, išsaugojimas paieškos metu               | fokusas; išvaloma; paslėpti laukai išsaugomi |
+
 ### Nustatymų pakeitimų matrica (ar kiekvienas nustatymas tikrai veikia)
 
 | Nustatymas                             | Ką turi pakeisti                    | Testai         |
 | -------------------------------------- | ----------------------------------- | -------------- |
 | tylos sekundės                         | kada uždaromas failas               | C4, J2         |
-| VOX jautrumas (atsidarymo / išlaikymo) | kada atsidaro / neuždaro            | C2, C5         |
+| VOX jautrumas (atsidarymo / išlaikymo) | kada atsidaro / neuždaro            | C2, C5, C9     |
+| banga Tekste / įrašymo indikatorius    | rodoma / nerodoma                   | W12, V5        |
+| švarus tekstas / užpildų žodžiai       | kas praleidžiama                    | Y1, Y2, Y8     |
 | min įrašo trukmė                       | trumpų atmetimas                    | C6             |
 | max įrašo trukmė                       | priverstinis STOP                   | D2             |
 | režimas (iškart / naktį)               | transkripcijos laikas               | D3, J3         |
@@ -537,6 +788,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | mp3 / kokybė                           | archyvo formatas, bitrate           | E3             |
 | trinti tuščius                         | tuščių likimas                      | E2             |
 | teksto laikymas (dienos)               | lango trimingas                     | I2             |
+| seno garso trynimas / dienos / GB      | kurių įrašų garsas ištrinamas       | P1–P5, P10     |
 | VAD min kalba / paddingas              | praleidimas / trim                  | H1–H6          |
 | vardo slenkstis / atsarga              | vardas ↔ `Kolega?` (griežtumas)     | G6, G10        |
 | kolegų garso šalinimas (mikrofone)     | L be R kopijos / kaip anksčiau      | L5             |

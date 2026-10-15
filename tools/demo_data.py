@@ -4,7 +4,8 @@
     DIKTATURA_DATA=/tmp/demo/data DIKTATURA_CONFIG_DIR=/tmp/demo/cfg python3 tools/demo_data.py
     DIKTATURA_DATA=/tmp/demo/data DIKTATURA_CONFIG_DIR=/tmp/demo/cfg python3 -m diktatura.ui.app --page training
 
-Sukuria transkripcijas (šiandien/vakar), du nežinomus balsus (pending: sintetinis garsas) ir registruotus vardus.
+Sukuria transkripcijas (šiandien/vakar) su sintetinėmis bangomis (.peaks), du nežinomus balsus (pending: sintetinis
+garsas) ir registruotus vardus.
 Saugiklis: atsisako rašyti, jei DIKTATURA_DATA nenurodytas (kad neužterštų tikrų duomenų).
 """
 import json
@@ -20,7 +21,7 @@ from pathlib import Path
 if not os.environ.get("DIKTATURA_DATA"):
     sys.exit("Nurodyk DIKTATURA_DATA=<laikinas katalogas> — tikrų duomenų neliečiam.")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from diktatura import paths  # noqa: E402
+from diktatura import paths, waveform  # noqa: E402
 from diktatura.speakers import store  # noqa: E402
 
 TODAY = datetime.now().replace(microsecond=0)
@@ -60,16 +61,33 @@ def fake_voice(path: Path, f0: float, seed: int, sec: float = 4.0):
         w.writeframes(bytes(frames))
 
 
+def fake_peaks(path: Path, spans: list, total: float, seed: int):
+    """Sintetinė stereo banga: kalbos atkarpos (s, e, kanalas) garsios su skiemenų ritmu, tarp jų — tylus fonas."""
+    rnd = random.Random(seed)
+    n = int(total * waveform.RATE)
+    data = bytearray()
+    for i in range(n):
+        t = i / waveform.RATE
+        for ch in (0, 1):
+            on = any(s <= t < e and c == ch for s, e, c in spans)
+            v = 150 + 70 * abs(math.sin(2 * math.pi * 2.2 * t + ch)) + rnd.uniform(-20, 20) if on else rnd.uniform(55, 75)
+            data.append(int(max(0, min(255, v))))
+    waveform.write(path, waveform.Peaks(waveform.RATE, 2, bytes(data)))
+
+
 def main():
     paths.ensure_dirs()
-    for src, when, rows in SESSIONS:
+    for k, (src, when, rows) in enumerate(SESSIONS):
         base = paths.RECORDINGS / f"{src}_{when:%Y%m%d_%H%M%S}"
         t = 3
-        lines = []
+        lines, spans = [], []
         for who, text in rows:
             lines.append(f"[{timedelta(seconds=t)}] {who}: {text}")
-            t += 4 + len(text) // 12
+            dur = 4 + len(text) // 12
+            spans.append((t + 0.3, t + dur - 0.6, 0 if who == "Tu" else 1))
+            t += dur
         base.with_suffix(".named.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        fake_peaks(base.with_suffix(".peaks"), spans, t + 3, k)
     # žymės: ⭐ svarbu ir ☐ užduotis pirmoje sesijoje (rodo README nuotraukoje)
     src0, when0, rows0 = SESSIONS[0]
     name0 = f"{src0}_{when0:%Y%m%d_%H%M%S}.named.txt"

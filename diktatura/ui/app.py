@@ -2,14 +2,17 @@
 
 Vienas egzempliorius (Gtk.Application per D-Bus): antras paleidimas su `--page <skiltis>` tik perjungia skiltį jau
 atidarytame lange (taip daro status bar ikonos meniu). Paleidimas — SISTEMOS python3 (gi/GTK):
-    python3 -m diktatura.ui.app [--page text|training|settings] [--shot failas.png]
---shot — nufotografuoti langą ir išeiti (README screenshot'ams). Env DIKTATURA_APP_ID — kitas id (testams).
+    python3 -m diktatura.ui.app [--page text|training|settings] [--progress] [--shot failas.png]
+--progress — atidaryti ⏳ transkripcijos eigos langelį (ikonos meniu). --shot — nufotografuoti langą ir išeiti
+(README screenshot'ams). Env DIKTATURA_APP_ID — kitas id (testams).
+📄 Tekstas — TextTabs: „🎙 Pokalbiai" (įrašų katalogas) + po skirtuką kiekvienam sekamam aplankui (diktatura.sources);
+be sekamų aplankų skirtukų juosta nerodoma. win.text — pagrindinis (pokalbių) TextPage.
 """
 import argparse
 import os
 import sys
 
-from diktatura import config
+from diktatura import config, sources
 from diktatura.ui import themes
 from diktatura.ui.gtk import Gdk, Gio, GLib, Gtk, install_css
 from diktatura.ui.settings_page import SettingsPage
@@ -19,6 +22,72 @@ from diktatura.ui.training_page import TrainingPage
 APP_ID = "lt.diktatura.Diktatura"
 PAGES = (("text", "📄 Tekstas"), ("training", "🎓 Apmokymai"), ("settings", "⚙ Nustatymai"))
 MIN_PAGE_HEIGHT = 220          # mažiausias skilties aukštis (px) — toliau slenkama
+
+
+class TextTabs(Gtk.Box):
+    """📄 Tekstas: pagrindinis skirtukas (pokalbiai / įrašai) + po vieną kiekvienam sekamam aplankui."""
+
+    def __init__(self, win, rec_dir=None, auto_refresh=True):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.win, self.auto_refresh = win, auto_refresh
+        self.main = TextPage(win, rec_dir=rec_dir, auto_refresh=auto_refresh)
+        self.nb = Gtk.Notebook()
+        self.nb.set_scrollable(True)
+        self.nb.set_show_border(False)
+        self.nb.append_page(self.main, Gtk.Label(label="🎙 Pokalbiai"))
+        self.tabs = {}                    # šaltinio id -> TextPage
+        self.labels = {}
+        self.pack_start(self.nb, True, True, 0)
+        self.nb.connect("switch-page", self._on_switch)
+        self.reload_sources()
+
+    def pages(self) -> list:
+        return [self.main, *self.tabs.values()]
+
+    def current(self):
+        return self.nb.get_nth_page(self.nb.get_current_page()) or self.main
+
+    def reload_sources(self) -> None:
+        """Skirtukai = sekami aplankai (išjungtas, bet jau turintis tekstų — lieka matomas)."""
+        items = [s for s in sources.load() if s.enabled or s.out_dir.exists()]
+        want = {s.id: s for s in items}
+        for sid in [k for k in self.tabs if k not in want]:
+            page = self.tabs.pop(sid)
+            self.labels.pop(sid, None)
+            page.stop_playback()
+            self.nb.remove_page(self.nb.page_num(page))
+            page.destroy()
+        theme = getattr(self.win, "theme", None)
+        for s in items:
+            if s.id in self.tabs:
+                self.tabs[s.id].source = s
+                self.labels[s.id].set_text(f"📁 {s.name}")
+                continue
+            page = TextPage(self.win, auto_refresh=self.auto_refresh, source=s)
+            self.tabs[s.id] = page
+            self.labels[s.id] = Gtk.Label(label=f"📁 {s.name}")
+            self.nb.append_page(page, self.labels[s.id])
+            page.show_all()
+            page.update_wave()
+            if theme is not None:
+                page.on_theme(theme)
+        self.nb.set_show_tabs(bool(self.tabs))
+
+    def show_source(self, sid: str) -> None:
+        if sid in self.tabs:
+            self.nb.set_current_page(self.nb.page_num(self.tabs[sid]))
+
+    def _on_switch(self, _nb, page, _n) -> None:
+        if hasattr(page, "refresh"):                  # nematomas skirtukas neatnaujinamas — atnaujinti dabar
+            try:
+                page.refresh()
+                page.update_source_bar()
+            except Exception as e:                    # langas nelūžta dėl vieno sugadinto failo
+                page.status.set_text(f"⚠ {e}")
+
+    def on_theme(self, theme) -> None:
+        for p in self.pages():
+            p.on_theme(theme)
 
 
 class MainWindow(Gtk.ApplicationWindow):
@@ -32,10 +101,11 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.text = TextPage(self, rec_dir=rec_dir, auto_refresh=auto_refresh)
+        self.text_tabs = TextTabs(self, rec_dir=rec_dir, auto_refresh=auto_refresh)
+        self.text = self.text_tabs.main
         self.training = TrainingPage(self, auto_refresh=auto_refresh)
         self.settings = SettingsPage(self)
-        self.pages = {"text": self.text, "training": self.training, "settings": self.settings}
+        self.pages = {"text": self.text_tabs, "training": self.training, "settings": self.settings}
         for name, title in PAGES:
             # Kiekviena skiltis — vertikaliai slenkamoje srityje: GTK3 langą leidžia sumažinti tik iki aukščio, kurio
             # reikėtų siauriausiam langui (persikeliančios mygtukų eilės) — mažame ekrane langas netilpdavo.
@@ -84,9 +154,29 @@ class MainWindow(Gtk.ApplicationWindow):
         for page in self.pages.values():          # Viewport savo vaiko nesunaikina — aiškiai (laikmačiai tikrina _alive)
             page.destroy()
 
+    def open_progress(self) -> bool:
+        """⏳ eigos langelis (jei jau atidarytas — tik iškeliamas)."""
+        if getattr(self, "_progress", None) is not None:
+            self._progress.dlg.present()
+            return False
+        from diktatura.ui.progress_dialog import ProgressDialog
+        self._progress = ProgressDialog(self)
+        try:
+            self._progress.run()
+        finally:
+            self._progress = None
+            for p in self.text_tabs.pages():
+                p.update_progress_button()
+        return False
+
+    def reload_sources(self) -> None:
+        """Nustatymuose pakeisti sekami aplankai — Teksto skirtukai iš naujo."""
+        self.text_tabs.reload_sources()
+
     def stop_audio(self) -> None:
         """Uždarant langą — sustabdyti grojimą (kitaip garsas skambėtų toliau, o įrašymo pauzė baigtųsi)."""
-        self.text.stop_playback()
+        for p in self.text_tabs.pages():
+            p.stop_playback()
         self.training.stop()
 
     def show_page(self, name: str) -> None:
@@ -113,7 +203,9 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _on_key(self, _w, ev):
         if self.current == "text":
-            return self.text.on_key(ev)
+            return self.text_tabs.current().on_key(ev)
+        if self.current == "settings":
+            return self.settings.on_key(ev)
         return False
 
     def screenshot(self, path: str, quit_after: bool = False):
@@ -131,6 +223,7 @@ class MainWindow(Gtk.ApplicationWindow):
 def parse_args(argv):
     ap = argparse.ArgumentParser(prog="diktatura.ui.app")
     ap.add_argument("--page", choices=[p for p, _ in PAGES])
+    ap.add_argument("--progress", action="store_true", help="atidaryti ⏳ transkripcijos eigos langelį")
     ap.add_argument("--shot", help="nufotografuoti langą į PNG ir išeiti")
     return ap.parse_args(argv)
 
@@ -151,6 +244,8 @@ class App(Gtk.Application):
         if args.page:
             self.win.show_page(args.page)
         self.win.present_with_time(Gdk.CURRENT_TIME)
+        if args.progress:
+            GLib.idle_add(self.win.open_progress)
         if args.shot:
             GLib.timeout_add(1500, self.win.screenshot, os.path.abspath(args.shot), True)
         return 0

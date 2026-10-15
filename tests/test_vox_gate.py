@@ -3,7 +3,7 @@ import pytest
 
 import audio
 from diktatura import config
-from diktatura.audio.vox import CALIB, PREROLL, VoxGate, rms_db
+from diktatura.audio.vox import CALIB, PREROLL, REC_NF_WINDOW, VoxGate, rms_db
 
 QUIET = -70.0       # kambario triukšmas
 LOUD = -20.0        # kalba
@@ -71,7 +71,8 @@ def test_c5_hysteresis_quiet_speech_keeps_open_but_does_not_open(cfg):
     between = QUIET + (cfg["VOX_CLOSE_MARGIN"] + cfg["VOX_OPEN_MARGIN"]) / 2
     assert set(feed(g, [between] * 30)) == {"idle"}     # per tylu pradėti
     feed(g, [LOUD])
-    assert set(feed(g, [between] * 200)) == {"write"}   # bet tęsti — užtenka (nenukerpa sakinio)
+    # bet tęsti — užtenka (nenukerpa sakinio); < 10 s: idealiai pastovus garsas ilgiau jau laikomas fonu (C9)
+    assert set(feed(g, [between] * (REC_NF_WINDOW - 5))) == {"write"}
 
 
 def test_c5_fixed_mode_uses_gate_db(cfg):
@@ -106,3 +107,74 @@ def test_config_change_applies_to_running_gate(cfg):
     feed(g, [LOUD] * 5 + [QUIET] * 10)
     g.update_config({**cfg, "VOX_SILENCE_SEC": 2})      # daemon'as perskaito config kas ~5 s
     assert "close" in feed(g, [QUIET] * 11)
+
+
+# ── C9: pasenusios triukšmo grindys (2026-10-13: grindys −92 dB, ventiliatorius −66 dB -> 6 val. „įrašas") ──
+
+FAN = -66.0
+
+
+def wobble(level, n, seed=1):
+    import random
+    r = random.Random(seed)
+    return [level + r.uniform(-0.5, 0.5) for _ in range(n)]
+
+
+def talk(n, seed=2):
+    """Kalba su pauzėmis (tikra kalba: 100 ms gabalų lygiai skiriasi 10+ dB, pauzės nukrenta iki fono)."""
+    import random
+    r = random.Random(seed)
+    return [r.choice([-25.0, -30.0, -35.0, -40.0, -45.0, FAN]) for _ in range(n)]
+
+
+def stale(cfg, **over):
+    g = VoxGate({**cfg, **over})
+    feed(g, [-92.0] * CALIB)                            # išmokta, kai mikrofonas buvo nutilęs
+    return g
+
+
+def test_c9_stale_floor_background_only_closes_and_is_too_short(cfg):
+    g = stale(cfg)
+    out = feed(g, wobble(FAN, 600))
+    assert out[0] == "open"                             # fonas virš pasenusių grindų — atsidaro...
+    assert out.index("close") == REC_NF_WINDOW          # ...bet po 10 s grindys pakeliamos ir užsidaro
+    assert not g.long_enough()                          # garso nebuvo -> failas bus ištrintas
+    assert g.refloored[0] == -92.0 and abs(g.refloored[1] - FAN) < 1
+    assert "open" not in out[REC_NF_WINDOW + 1:]        # toliau fonas nebeatidaro
+
+
+def test_c9_stale_floor_speech_then_background_closes_after_silence(cfg):
+    g = stale(cfg, VOX_SILENCE_SEC=5)
+    out = feed(g, talk(400) + wobble(FAN, 300))
+    c = out.index("close")
+    assert 400 + 40 <= c <= 400 + 60                    # ~5 s po kalbos pabaigos, kaip įprastai
+    assert g.long_enough() and g.voiced_duration > 35   # kalba išsaugoma
+
+
+def test_c9_correct_floor_conversation_never_refloors(cfg):
+    g = VoxGate(cfg)
+    feed(g, wobble(FAN, CALIB))
+    out = feed(g, [LOUD] + talk(1200, seed=5))          # 2 min pokalbio su pauzėmis
+    assert "close" not in out and g.refloored is None
+
+
+def test_c9_floor_relaxes_again_when_room_gets_quiet(cfg):
+    g = stale(cfg)
+    feed(g, wobble(FAN, 200))
+    assert abs(g.nf - FAN) < 1
+    feed(g, [QUIET] * 60)                               # ventiliatorius nurimo (budint grindys vėl mokomos)
+    assert g.nf < FAN - 3 and feed(g, [-45.0])[0] == "open"
+
+
+def test_c9_fixed_mode_does_not_adapt(cfg):
+    g = VoxGate({**cfg, "VOX_ADAPTIVE": False, "VOX_GATE_DB": -35.0})
+    feed(g, [-30.0])
+    assert set(feed(g, [-40.0] * 300)) == {"write"} and g.refloored is None   # vartotojo slenkstis — šventas
+
+
+def test_c9_recalibrate_needs_calibration_again(cfg):
+    g = calibrated(cfg)
+    feed(g, [LOUD] * 5)
+    g.recalibrate()                                     # kitas įrenginys
+    assert not g.recording and set(feed(g, [LOUD] * (CALIB - 1))) == {"idle"}
+    assert feed(g, [LOUD])[0] == "idle"                 # kalibruojasi pagal naują garsą (LOUD = fonas)

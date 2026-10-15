@@ -10,8 +10,19 @@
   VOX neįrašinėja — diktatura.pause),
   ⭐ svarbu / ☐ užduotis (☑ atlikta), 🎓 priskirti vardą nežinomam balsui, ✎ Kas kalbėjo? (pataisyti kalbėtoją:
   eilutė pervadinama, o jos balsas išmokstamas tam žmogui / tau — diktatura.speakers.teach, fone per .venv).
-  📊 Statistika (kas kiek kalbėjo),
+  📊 Statistika (kas kiek kalbėjo), ⏳ Transkripcija (eiga ir prognozė — ui.progress_dialog; mygtuko užrašas kas 2 s
+  rodo „43 % · liko ~1 val. · eilėje 4"),
   💾 Eksportuoti (matomas tekstas -> .txt / .md). Tekstą galima redaguoti prieš kopijuojant (failai nekeičiami).
+- ✨ Švarus (CLEAN_VIEW, mygtukas „✨ Švarus"): rodoma be užpildų („ee", „mhm", FILLER_WORDS) ir pasikartojimų
+  (diktatura.fillers); eilutės iš vien užpildų slepiamos. Paieška ir eksportas — kaip rodoma; failai nekeičiami.
+- 🔁 Transkribuoti iš naujo (dešinys klik): sesija iš naujo dabartiniu modeliu ir balsais (bin/transcribe-file.sh,
+  DIKTATURA_RETRANSCRIBE=1 — senas tekstas lieka, kol naujas paruoštas; ankstesnis — <tekstas>.prev);
+  ↩ Grąžinti ankstesnę transkripciją — sukeičia su .prev.
+- Sekami aplankai (diktatura.sources): kiekvienam — atskiras TextPage (source=…) savame skirtuke (ui.app TextTabs):
+  tekstai iš <duomenys>/sources/<id>/, viršuje — aplankas, kiek laukia, „🔄 Transkribuoti dabar", „📂 Atidaryti".
+- 🌊 Banga (WAVEFORM, mygtukas „🌊 Banga"): virš teksto — vienos sesijos garso banga (ui.waveform_view): naujausios,
+  o spragtelėjus eilutę / grojant — tos sesijos (pasirinkta eilutė paryškinta ir bangoje). Spragtelėjus bangą — groja nuo
+  ten. Smailės — <bazė>.peaks (diktatura.waveform); jei jų nėra, bet garsas yra — suskaičiuojamos fone (.venv).
 """
 import json
 import os
@@ -21,11 +32,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from diktatura import annotations, config, pause, paths, sessions, stats
+from diktatura import annotations, config, fillers, pause, paths, progress, services, sessions, stats, waveform
 from diktatura.speakers import store
 from diktatura.ui.gtk import Gdk, GLib, Gtk, Pango, button, flow, group, label
 from diktatura.ui.player import SeekPlayer
 from diktatura.ui.themes import LIGHT_PALETTE
+from diktatura.ui.waveform_view import WaveformView
 
 # Spalvos kalbėtojams (tinka šviesiai ir tamsiai temai); priskiriamos pagal pasirodymą
 PALETTE = list(LIGHT_PALETTE)      # tema (on_theme) pakeičia
@@ -38,6 +50,19 @@ ALL_SPEAKERS = "__visi__"
 def teach_cmd(path, idx: int, name: str) -> list:
     """Balso mokymosi iš pataisytos eilutės komanda (.venv: numpy + sherpa-onnx; UI jų neturi)."""
     return [str(paths.VENV_PY), "-m", "diktatura.speakers.teach", str(path), str(idx), name]
+
+
+def peaks_cmd(audio, out) -> list:
+    """Bangos smailių skaičiavimas fone (.venv: numpy), žemiausiu prioritetu."""
+    return ["nice", "-n", "19", str(paths.VENV_PY), "-m", "diktatura.waveform", str(audio), "--out", str(out)]
+
+
+def line_span(ln, lines) -> tuple:
+    """(pradžia, pabaiga) s — eilutė skamba iki kitos eilutės su laiku (ne ilgiau 30 s)."""
+    if ln.seconds is None:
+        return None, None
+    nxt = [x.seconds for x in lines if x.seconds is not None and x.seconds > ln.seconds]
+    return ln.seconds, min(min(nxt) if nxt else ln.seconds + 5, ln.seconds + 30)
 
 
 @dataclass
@@ -62,6 +87,10 @@ class Session:
     ino: int = 0
     mtime_ns: int = 0
     lines: list = field(default_factory=list)
+    key: str = ""              # žymių (⭐/☐) raktas: failo vardas; sekamo aplanko — „<id>/<vardas>" (vardai kartojasi)
+
+    def __post_init__(self):
+        self.key = self.key or self.path.name
 
     def parse(self, chunk: str) -> list:
         out = []
@@ -75,10 +104,11 @@ class Session:
         return out
 
 
-def load_session(path: Path) -> Session:
+def load_session(path: Path, source_label: str = "", key_prefix: str = "") -> Session:
     st = path.stat()
     parsed = sessions.parse_name(path.name)
-    s = Session(path, sessions.session_dt(path), parsed[0].upper() if parsed else "", ino=st.st_ino)
+    s = Session(path, sessions.session_dt(path), parsed[0].upper() if parsed else source_label, ino=st.st_ino,
+                key=f"{key_prefix}{path.name}")
     read_more(s, st)
     return s
 
@@ -126,12 +156,13 @@ def fmt_dur(sec: float) -> str:
 
 
 class TextPage(Gtk.Box):
-    def __init__(self, win=None, rec_dir=None, auto_refresh=True):
+    def __init__(self, win=None, rec_dir=None, auto_refresh=True, source=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.win = win
+        self.source = source        # sources.Source — sekamo aplanko skirtukas (None — pokalbiai / įrašai)
         self._alive = True          # langą uždarius fone likę laikmačiai nebeliečia valdiklių
         self.connect("destroy", lambda _w: setattr(self, "_alive", False))
-        self._rec = Path(rec_dir) if rec_dir else None
+        self._rec = Path(rec_dir) if rec_dir else (source.out_dir if source is not None else None)
         self.sessions = {}          # Path -> Session
         self.order = []             # atvaizduotos sesijos (sena -> nauja)
         self.mark_line = {}         # TextMark -> Line (eilutės pradžia; išlieka redaguojant)
@@ -148,6 +179,26 @@ class TextPage(Gtk.Box):
         self.play_session = None
         self._menu_line = None
         self._building = False
+        self.spk_colors = {}        # kalbėtojas -> spalva (tekstas ir banga)
+        self.wave_session = None    # kurios sesijos banga rodoma
+        self.wave_pinned = False    # pasirinkta spragtelėjus / grojant (kitaip — naujausia)
+        self.wave_line = None
+        self._peaks_jobs = {}       # smailių failas -> Popen (skaičiuojama fone)
+        self._wave_key = None
+        cfg = config.load()
+        self.clean = bool(cfg["CLEAN_VIEW"])
+        self.clean_words = fillers.parse_words(cfg["FILLER_WORDS"])
+
+        if source is not None:              # sekamas aplankas: iš kur, kiek laukia, „transkribuoti dabar"
+            sb = self._row(top=8)
+            self.lbl_source = label("", css="dk-help")
+            self.lbl_source.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+            sb.pack_start(self.lbl_source, True, True, 0)
+            self.btn_src_now = button("🔄 Transkribuoti dabar", self.transcribe_source_now,
+                                      "Transkribuoti laukiančius šio aplanko failus dabar (nelaukiant nakties)")
+            sb.pack_start(self.btn_src_now, False, False, 0)
+            sb.pack_start(button("📂 Atidaryti aplanką", self.open_source_folder), False, False, 0)
+            self.pack_start(sb, False, False, 0)
 
         # 1 eilutė: paieška
         tb = self._row()
@@ -180,16 +231,46 @@ class TextPage(Gtk.Box):
         self.btn_stop.set_no_show_all(True)
         self.cb_auto = Gtk.CheckButton(label="Sekti naujus")
         self.cb_auto.set_active(True)
-        self.cb_auto.connect("toggled", lambda w: setattr(self, "autoscroll", w.get_active()))
+        self.cb_auto.connect("toggled", self._on_autoscroll)
+        self.btn_progress = button("⏳ Transkripcija", self.on_progress,
+                                   "Kiek liko: dabartinis failas ir visa eilė (galima praleisti ar sustabdyti)")
+        self.btn_wave = Gtk.ToggleButton(label="🌊 Banga")
+        self.btn_wave.set_tooltip_text("Rodyti / slėpti garso bangą (spragtelėk eilutę — jos sesijos banga)")
+        self.btn_wave.set_active(bool(config.load()["WAVEFORM"]))
+        self.btn_wave.connect("toggled", self._on_wave_toggled)
+        self.btn_clean = Gtk.ToggleButton(label="✨ Švarus")
+        self.btn_clean.set_tooltip_text("Rodyti be užpildų („ee\", „mhm\", „nu\"…) ir pasikartojimų — failai nekeičiami")
+        self.btn_clean.set_active(self.clean)
+        self.btn_clean.connect("toggled", self._on_clean_toggled)
         fb = flow(group(label("Kalbėtojas:"), self.cmb_speaker), group(label("Laikotarpis:"), self.cmb_period),
-                  self.cb_tagged, self.btn_stop,
-                  button("📊 Statistika", self.on_stats, "Kas kiek kalbėjo (matomose sesijose)"),
+                  self.cb_tagged, self.btn_stop, self.btn_wave, self.btn_clean,
+                  button("📊 Statistika", self.on_stats, "Kas kiek kalbėjo (matomose sesijose)"), self.btn_progress,
                   button("💾 Eksportuoti…", self.on_export, "Išsaugoti matomą tekstą (.txt arba .md)"),
                   button("Kopijuoti viską", self.copy_all), self.cb_auto)
         for m in ("start", "end"):
             getattr(fb, f"set_margin_{m}")(8)
         fb.set_margin_bottom(4)
         self.pack_start(fb, False, False, 0)
+
+        # 🌊 banga: antraštė (kuri sesija) + piešinys; „⤓ Naujausia" — vėl sekti naujausią sesiją
+        self.wave = WaveformView(on_seek=self._on_wave_seek)
+        self.lbl_wave = label("", css="dk-help")
+        self.lbl_wave.set_ellipsize(Pango.EllipsizeMode.END)
+        self.btn_wave_latest = button("⤓ Naujausia", self.wave_follow_latest, "Rodyti naujausios sesijos bangą")
+        self.btn_wave_latest.set_no_show_all(True)
+        head = Gtk.Box(spacing=6)
+        head.pack_start(self.lbl_wave, True, True, 0)
+        head.pack_end(self.btn_wave_latest, False, False, 0)
+        self.wave_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        for m in ("start", "end"):
+            getattr(self.wave_box, f"set_margin_{m}")(8)
+        self.wave_box.set_margin_bottom(4)
+        self.wave_box.pack_start(head, False, False, 0)
+        self.wave_box.pack_start(self.wave, False, False, 0)
+        head.show_all()
+        self.wave.show()
+        self.wave_box.set_no_show_all(True)          # matomumą valdo „🌊 Banga"
+        self.pack_start(self.wave_box, False, False, 0)
 
         self.sw = Gtk.ScrolledWindow()
         self.sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -200,6 +281,7 @@ class TextPage(Gtk.Box):
         self.tv.set_right_margin(10)
         self.tv.set_monospace(True)
         self.tv.connect("button-press-event", self._on_press)
+        self.tv.connect("button-release-event", self._on_release)
         self.tv.connect("populate-popup", self._on_popup)
         self.buf = self.tv.get_buffer()
         self.t_sep = self.buf.create_tag("sep", foreground="#888888", weight=Pango.Weight.BOLD)
@@ -218,8 +300,15 @@ class TextPage(Gtk.Box):
         self.pack_start(self.status, False, False, 0)
 
         self.refresh()
+        self.update_progress_button()
+        self.update_source_bar()
         if auto_refresh:
             GLib.timeout_add_seconds(REFRESH_SEC, self._tick)
+
+    def _on_autoscroll(self, cb) -> None:
+        self.autoscroll = cb.get_active()
+        if self.autoscroll:                       # vėl sekti naujus — ir banga grįžta prie naujausios sesijos
+            self.wave_follow_latest()
 
     def _row(self, top=6):
         b = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -233,17 +322,70 @@ class TextPage(Gtk.Box):
         return self._rec or paths.RECORDINGS
 
     def _tick(self):
+        if not self._alive:
+            return False
+        if self.source is not None and not self.get_mapped():
+            return True                         # nematomas skirtukas — neatnaujinamas (atnaujins atsidarius)
         try:
             self.refresh()
         except Exception as e:                  # langas neturi užlūžti dėl vieno sugadinto failo
             self.status.set_text(f"⚠ {e}")
+        self.update_progress_button()
+        self.update_source_bar()
         return True
+
+    # ── sekamas aplankas ──
+    def update_source_bar(self) -> None:
+        if self.source is None:
+            return
+        from diktatura import sources
+        src = sources.get(self.source.id) or self.source
+        c = sources.counts(src)
+        night = config.load()["MODE"] == "deferred"
+        state = ("⚠ aplanko nėra" if not src.dir.is_dir() else "išjungtas (nesekamas)" if not src.enabled
+                 else f"laukia {c['pending']}" + (" — transkribuos naktį" if night and c["pending"] else ""))
+        self.lbl_source.set_text(f"📂 {src.path} · failų {c['files']}, tekstų {c['texts']} · {state}")
+        self.btn_src_now.set_sensitive(bool(c["pending"]))
+
+    def transcribe_source_now(self) -> None:
+        services.spawn_detached(["bash", str(paths.BIN / "transcribe-pending.sh"), "--sources"], "sources")
+        self.status.set_text("⏳ Transkribuojami laukiantys šio aplanko failai — eiga: „⏳ Transkripcija\"")
+
+    def open_source_folder(self) -> None:
+        try:
+            subprocess.Popen(["xdg-open", str(self.source.dir)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            pass
+
+    def update_progress_button(self, snap=None) -> None:
+        """„⏳ Transkripcija" / „⏳ 43 % · liko ~1 val. · eilėje 4"."""
+        try:
+            s = progress.summary(snap or progress.snapshot())
+        except Exception:                       # eiga — tik informacija
+            s = ""
+        self.btn_progress.set_label(f"⏳ {s}" if s else "⏳ Transkripcija")
+
+    def on_progress(self) -> None:
+        if self.win is not None and hasattr(self.win, "open_progress"):
+            self.win.open_progress()
+            return
+        from diktatura.ui.progress_dialog import ProgressDialog
+        ProgressDialog(None).run()
+        self.update_progress_button()
 
     def date_range(self):
         return period_range(self.period, self.days)
 
     def refresh(self) -> None:
-        self.days = retention_days()
+        cfg = config.load()
+        self.days = cfg["RETENTION_DAYS"]
+        clean, words = bool(cfg["CLEAN_VIEW"]), fillers.parse_words(cfg["FILLER_WORDS"])
+        if (clean, words) != (self.clean, self.clean_words):          # pakeista Nustatymuose
+            self.clean, self.clean_words = clean, words
+            if self.btn_clean.get_active() != clean:
+                self.btn_clean.set_active(clean)                       # -> render_all
+            else:
+                self.render_all()
         self.cmb_period.get_model()[0][0] = f"Pask. {self.days} d. (nustatymas)"
         since, until = self.date_range()
         files = [f for f in sessions.text_files(self.rec_dir(), since)
@@ -260,12 +402,13 @@ class TextPage(Gtk.Box):
             except OSError:
                 continue
             s = self.sessions.get(f)
+            label_, pre = (self.source.name.upper(), f"{self.source.id}/") if self.source is not None else ("", "")
             if s is None:
-                s = self.sessions[f] = load_session(f)
+                s = self.sessions[f] = load_session(f, label_, pre)
                 appended.append((s, s.lines, True))
             elif st.st_ino != s.ino or st.st_size < s.size or (
                     st.st_mtime_ns != s.mtime_ns and st.st_size == s.size and not _still_writing(st)):
-                self.sessions[f] = load_session(f)             # perrašytas (pvz. pervadintas kalbėtojas)
+                self.sessions[f] = load_session(f, label_, pre)   # perrašytas (pvz. pervadintas kalbėtojas)
                 rerender = True
             elif st.st_size > s.size:
                 new = read_more(s, st)
@@ -290,15 +433,38 @@ class TextPage(Gtk.Box):
             self._after_change()
         self._update_speakers()
         self._update_status()
+        self.update_wave()
 
     def ordered(self) -> list:
         return sorted(self.sessions.values(), key=lambda x: (x.when, x.path.name))
 
+    # ── ✨ švarus rodinys ──
+    def display_text(self, ln: Line) -> str:
+        """Kaip eilutė rodoma: švariame rodinyje — be užpildų (talpykla eilutėje pagal žodžių sąrašą)."""
+        if not self.clean:
+            return ln.text
+        c = getattr(ln, "_clean", None)
+        if c is None or c[0] != self.clean_words:
+            c = ln._clean = (self.clean_words, fillers.clean(ln.text, self.clean_words))
+        return c[1]
+
+    def _on_clean_toggled(self, btn) -> None:
+        self.clean = btn.get_active()
+        try:
+            if bool(config.load()["CLEAN_VIEW"]) != self.clean:
+                config.save({"CLEAN_VIEW": "1" if self.clean else "0"})
+        except (OSError, ValueError):
+            pass
+        self.render_all()
+        self._update_status()
+
     # ── filtrai ──
     def visible(self, ln: Line) -> bool:
+        if self.clean and not self.display_text(ln):
+            return False                          # eilutė iš vien užpildų („Mhm.")
         if self.f_speaker and ln.speaker != self.f_speaker:
             return False
-        if self.f_tagged and not annotations.match(self.ann, ln.session.path.name, ln.idx, ln.text):
+        if self.f_tagged and not annotations.match(self.ann, ln.session.key, ln.idx, ln.text):
             return False
         return True
 
@@ -376,14 +542,14 @@ class TextPage(Gtk.Box):
         mark = self.buf.create_mark(None, end, True)
         self.mark_line[mark] = ln
         self.line_mark[id(ln)] = mark
-        ic = annotations.icon(annotations.match(self.ann, ln.session.path.name, ln.idx, ln.text))
+        ic = annotations.icon(annotations.match(self.ann, ln.session.key, ln.idx, ln.text))
         if ic:
             self.buf.insert_with_tags(self.buf.get_end_iter(), f"{ic} ", self.t_mark)
         if ln.ts:
             self.buf.insert_with_tags(self.buf.get_end_iter(), f"[{ln.ts}] ", self.t_time)
         if ln.speaker:
             self.buf.insert_with_tags(self.buf.get_end_iter(), f"{ln.speaker}: ", self.spk_tag(ln.speaker))
-        self.buf.insert(self.buf.get_end_iter(), ln.text + "\n")
+        self.buf.insert(self.buf.get_end_iter(), self.display_text(ln) + "\n")
 
     def _after_change(self, keep_vadj=None) -> None:
         if len(self.search.get_text()) >= 3:
@@ -397,8 +563,16 @@ class TextPage(Gtk.Box):
         if name not in self.spk_tags:
             pal = getattr(self, "palette", PALETTE)
             color = pal[len(self.spk_tags) % len(pal)]
+            self.spk_colors[name] = color
             self.spk_tags[name] = self.buf.create_tag(None, foreground=color, weight=Pango.Weight.BOLD)
         return self.spk_tags[name]
+
+    def spk_color(self, name: str) -> str:
+        """Kalbėtojo spalva (ta pati kaip tekste; dar nematytam — priskiriama)."""
+        if not name:
+            return "#80868b"
+        self.spk_tag(name)
+        return self.spk_colors[name]
 
     def line_at_iter(self, it):
         it = it.copy()
@@ -433,6 +607,8 @@ class TextPage(Gtk.Box):
             flt.append(f"kalbėtojas: {self.f_speaker}")
         if self.f_tagged:
             flt.append("tik žymėtos")
+        if self.clean:
+            flt.append("✨ švarus")
         self.status.set_text(f"Rodoma {len(self.order)} sesijų ({per}) · kalbėtojų: {len(self.speakers())} · "
                              + (" · ".join(flt) + " · " if flt else "")
                              + ("seka naujus" if self.autoscroll else "nestabdoma"))
@@ -532,8 +708,11 @@ class TextPage(Gtk.Box):
         self.t_sep.props.foreground = theme.text["sep"]
         self.t_time.props.foreground = theme.text["time"]
         self.t_mark.props.foreground = theme.text["mark"]
-        for i, tag in enumerate(self.spk_tags.values()):
-            tag.props.foreground = self.palette[i % len(self.palette)]
+        for i, (name, tag) in enumerate(self.spk_tags.items()):
+            tag.props.foreground = self.spk_colors[name] = self.palette[i % len(self.palette)]
+        self.wave.set_size_request(120, 64 if theme.compact else 84)
+        self._wave_key = None
+        self.update_wave()
 
     def menu_items(self, ln: Line) -> list:
         """Kontekstinio meniu punktai eilutei (atskirai — testuojama)."""
@@ -547,7 +726,7 @@ class TextPage(Gtk.Box):
 
         audio = sessions.audio_for(ln.session.path)
         add(f"▶ Groti nuo čia ({ln.ts or '0:00:00'})", lambda: self.play_line(ln), audio is not None)
-        a = annotations.match(self.ann, ln.session.path.name, ln.idx, ln.text)
+        a = annotations.match(self.ann, ln.session.key, ln.idx, ln.text)
         if not a or a.get("tag") != "star":
             add("⭐ Pažymėti: svarbu", lambda: self.tag_line(ln, "star"))
         if not a or a.get("tag") != "task":
@@ -561,17 +740,112 @@ class TextPage(Gtk.Box):
             add(f"🎓 Priskirti vardą balsui {pid}…", lambda: self.goto_training(pid))
         if ln.speaker and ln.ts:
             sub = Gtk.Menu()
-            for name, text in self.correction_choices(ln):
-                mi = Gtk.MenuItem(label=text)
-                mi.connect("activate", lambda _w, n=name: self.correct_speaker(ln, n))
-                sub.append(mi)
-            other = Gtk.MenuItem(label="✎ Kitas vardas…")
-            other.connect("activate", lambda _w: self._ask_and_correct(ln))
-            sub.append(other)
-            top = Gtk.MenuItem(label=f"✎ Kas kalbėjo? (ne {ln.speaker})")
-            top.set_submenu(sub)
-            items.append(top)
+            self._speaker_menu(ln, sub, items)
+        items.append(Gtk.SeparatorMenuItem())
+        can, why = self.can_retranscribe(ln.session)
+        add("🔁 Transkribuoti šią sesiją iš naujo…" if can else f"🔁 Transkribuoti iš naujo ({why})",
+            lambda: self.on_retranscribe(ln.session), can)
+        if self.prev_text(ln.session).exists():
+            add("↩ Grąžinti ankstesnę transkripciją", lambda: self.restore_previous(ln.session))
         return items
+
+    def _speaker_menu(self, ln, sub, items) -> None:
+        """„✎ Kas kalbėjo?" pomeniu (tu, registruoti ir matomi vardai, kitas vardas…)."""
+        for name, text in self.correction_choices(ln):
+            mi = Gtk.MenuItem(label=text)
+            mi.connect("activate", lambda _w, n=name: self.correct_speaker(ln, n))
+            sub.append(mi)
+        other = Gtk.MenuItem(label="✎ Kitas vardas…")
+        other.connect("activate", lambda _w: self._ask_and_correct(ln))
+        sub.append(other)
+        top = Gtk.MenuItem(label=f"✎ Kas kalbėjo? (ne {ln.speaker})")
+        top.set_submenu(sub)
+        items.append(top)
+
+    # ── 🔁 transkribuoti iš naujo ──
+    def prev_text(self, session) -> Path:
+        return session.path.with_name(session.path.name + ".prev")
+
+    def can_retranscribe(self, session) -> tuple:
+        """(galima?, kodėl ne). Garsas turi būti; senas formatas (.clean.dialog.txt) — ne (liktų du tekstai)."""
+        if session.path.name.endswith(".dialog.txt"):
+            return False, "senas formatas"
+        if sessions.audio_for(session.path) is None:
+            return False, "garso nebėra"
+        busy = {sessions.base_name(j.file.name) for j in self._jobs()}
+        if sessions.base_name(session.path.name) in busy:
+            return False, "jau transkribuojama"
+        return True, ""
+
+    def _jobs(self) -> list:
+        try:
+            return progress.snapshot().jobs
+        except Exception:                       # eiga — tik informacija
+            return []
+
+    def retranscribe_cmd(self, session) -> list:
+        """bin/transcribe-file.sh <garsas> [<išvesties bazė> — sekamam aplankui]."""
+        audio = sessions.audio_for(session.path)
+        cmd = ["bash", str(paths.BIN / "transcribe-file.sh"), str(audio)]
+        base = session.path.with_name(sessions.base_name(session.path.name))
+        if self.source is not None or base.parent != audio.parent:
+            cmd.append(str(base))
+        return cmd
+
+    def on_retranscribe(self, session) -> bool:
+        audio = sessions.audio_for(session.path)
+        if audio is None:
+            return False
+        dur = progress.audio_info(audio)[0]
+        try:
+            model = config.load()["MODEL"]
+            est = progress.estimate_job_total("named" if session.path.name.endswith(".named.txt") else "mono", dur,
+                                              progress.rates(model))
+            eta = f" Truks ≈ {progress.fmt_left(est)} (šiame kompiuteryje{', po eilėje esančių' if self._jobs() else ''})."
+        except Exception:                       # prognozė — tik informacija
+            eta = ""
+        dlg = Gtk.MessageDialog(transient_for=self.get_toplevel() if self.win else None, modal=True,
+                                message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.NONE,
+                                text=f"Transkribuoti „{sessions.base_name(session.path.name)}“ iš naujo?")
+        dlg.format_secondary_text(
+            f"{fmt_dur(dur)} garso — dabartiniu modeliu ir su dabartiniais balsais (vardai gali pasikeisti)."
+            f"{eta} Senas tekstas lieka, kol naujas bus paruoštas; ankstesnį galėsi grąžinti (↩). "
+            "Žymės ⭐☐ gali nebeatitikti pasikeitusių eilučių.")
+        dlg.add_button("Atšaukti", Gtk.ResponseType.CANCEL)
+        dlg.add_button("🔁 Transkribuoti", Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
+        dlg.set_default_response(Gtk.ResponseType.CANCEL)
+        resp = self.run_dialog(dlg)
+        dlg.destroy()
+        if resp != Gtk.ResponseType.OK:
+            return False
+        return self.retranscribe(session)
+
+    def run_dialog(self, dlg) -> int:
+        """Atskirai — testai jį pakeičia (dialogo nerodo)."""
+        return dlg.run()
+
+    def retranscribe(self, session) -> bool:
+        try:
+            services.spawn_detached(self.retranscribe_cmd(session), "retx", {"DIKTATURA_RETRANSCRIBE": "1"})
+        except OSError as e:
+            self.status.set_text(f"✗ nepavyko paleisti: {e}")
+            return False
+        self.status.set_text(f"🔁 {sessions.base_name(session.path.name)} transkribuojama iš naujo — eiga: "
+                             "„⏳ Transkripcija\"; tekstas atsinaujins pats")
+        return True
+
+    def restore_previous(self, session) -> bool:
+        """↩ Ankstesnė transkripcija (.prev) <-> dabartinė (galima grąžinti atgal tuo pačiu punktu)."""
+        prev, cur = self.prev_text(session), session.path
+        if not prev.exists():
+            return False
+        tmp = cur.with_name(cur.name + ".swap")
+        os.replace(cur, tmp)
+        os.replace(prev, cur)
+        os.replace(tmp, prev)
+        self.refresh()
+        self.status.set_text(f"↩ Grąžinta ankstesnė transkripcija ({cur.name}); naujesnė — {prev.name}")
+        return True
 
     # ── kalbėtojo pataisymas ──
     def correction_choices(self, ln: Line) -> list:
@@ -658,11 +932,11 @@ class TextPage(Gtk.Box):
 
     # ── žymės ──
     def tag_line(self, ln: Line, tag) -> None:
-        annotations.set_tag(ln.session.path.name, ln.idx, ln.text, tag)
+        annotations.set_tag(ln.session.key, ln.idx, ln.text, tag)
         self.render_all()
 
     def toggle_task(self, ln: Line) -> None:
-        annotations.toggle_done(ln.session.path.name, ln.idx, ln.text)
+        annotations.toggle_done(ln.session.key, ln.idx, ln.text)
         self.render_all()
 
     def goto_training(self, pid: str) -> None:
@@ -670,23 +944,156 @@ class TextPage(Gtk.Box):
             self.win.show_page("training")
             self.win.training.select(pid)
 
+    # ── 🌊 banga ──
+    def _on_wave_toggled(self, btn) -> None:
+        on = btn.get_active()
+        try:
+            if bool(config.load()["WAVEFORM"]) != on:
+                config.save({"WAVEFORM": "1" if on else "0"})
+        except (OSError, ValueError):
+            pass                                  # nustatymas neįsirašė — rodymas vis tiek perjungiamas
+        self._wave_key = None
+        self.update_wave()
+
+    def wave_follow_latest(self) -> None:
+        self.wave_pinned = False
+        self.wave_line = None
+        self.update_wave()
+
+    def select_wave(self, session, ln=None) -> None:
+        """Rodyti šios sesijos bangą (spragtelėta eilutė / grojama); ln — paryškinti jos vietą."""
+        self.wave_session, self.wave_pinned, self.wave_line = session, True, ln
+        self.update_wave()
+
+    def wave_peaks_file(self, session) -> Path:
+        return waveform.peaks_path(session.path)
+
+    def update_wave(self) -> None:
+        """Kurios sesijos banga, jos smailės (jei nėra — skaičiuojamos fone), žymės, paryškinta eilutė."""
+        show = self.btn_wave.get_active() and bool(self.sessions)
+        self.wave_box.set_visible(show)
+        if not show:
+            return
+        if not self.wave_pinned or self.wave_session is None or self.wave_session.path not in self.sessions:
+            self.wave_pinned = False
+            self.wave_line = None
+            last = self.order[-1] if self.order else max(self.sessions, key=lambda p: self.sessions[p].when)
+            self.wave_session = self.sessions.get(last)
+        else:
+            self.wave_session = self.sessions[self.wave_session.path]      # perkrautas (perrašytas failas)
+        s = self.wave_session
+        if s is None:
+            return
+        self.btn_wave_latest.set_visible(self.wave_pinned)
+        pf = self.wave_peaks_file(s)
+        try:
+            st = pf.stat()
+            pkey = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            pkey = None
+        key = (s.path, len(s.lines), pkey, id(s))
+        if key != self._wave_key:
+            self._wave_key = key
+            pk = waveform.read(pf) if pkey else None
+            audio = sessions.audio_for(s.path)
+            if pk is None or (audio is not None and not waveform.is_fresh(pf, audio)):
+                if audio is not None:
+                    self._start_peaks(audio, pf)
+                    self.wave.set_peaks(pk)
+                    self.wave.set_message("🌊 skaičiuojama banga…")
+                else:
+                    self.wave.set_peaks(None)
+                    self.wave.set_message("Garso nebėra — bangos nėra (tekstas lieka)")
+            elif pk is not self.wave.peaks:
+                self.wave.set_peaks(pk)
+            self.wave.set_colors(self.spk_color(store.ME), getattr(self, "palette", PALETTE)[-1])
+            self.wave.set_lines([(ln.seconds, ln.speaker, self.spk_color(ln.speaker), ln.text) for ln in s.lines],
+                                me=store.ME)
+        dur = self.wave.duration
+        name = sessions.base_name(s.path.name)
+        self.lbl_wave.set_text(f"🌊 {s.when:%Y-%m-%d %H:%M} · {s.source + ' · ' if s.source else ''}{name}"
+                               + (f" · {fmt_dur(dur)}" if dur else "")
+                               + ("" if self.wave_pinned else " · naujausia"))
+        a, b = line_span(self.wave_line, s.lines) if self.wave_line is not None else (None, None)
+        self.wave.set_band(a, b)
+
+    def _start_peaks(self, audio, out) -> None:
+        if out in self._peaks_jobs:
+            return
+        try:
+            p = subprocess.Popen(peaks_cmd(audio, out), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 cwd=str(paths.REPO), env={**os.environ, "PYTHONPATH": str(paths.REPO)})
+        except OSError as e:
+            self.wave.set_message(f"Bangos nepavyko suskaičiuoti: {e}")
+            return
+        self._peaks_jobs[out] = p
+        GLib.timeout_add(400, self._poll_peaks, out)
+
+    def _poll_peaks(self, out) -> bool:
+        p = self._peaks_jobs.get(out)
+        if not self._alive or p is None:
+            return False
+        if p.poll() is None:
+            return True
+        del self._peaks_jobs[out]
+        self._wave_key = None
+        if p.returncode != 0 and self.wave_session is not None and self.wave_peaks_file(self.wave_session) == out:
+            self.wave.set_message("Bangos nepavyko suskaičiuoti (garso failas sugadintas?)")
+            return False
+        self.update_wave()
+        return False
+
+    def _on_wave_seek(self, sec: float) -> None:
+        s = self.wave_session
+        if s is None:
+            return
+        ln = None
+        for x in s.lines:
+            if x.seconds is not None and x.seconds <= sec + 0.25:
+                ln = x
+        self.wave_pinned, self.wave_line = True, ln
+        self.play_at(s, sec)
+        self.update_wave()
+
+    def _on_release(self, tv, ev):
+        if ev.button == 1:
+            GLib.idle_add(self._wave_from_cursor)
+        return False
+
+    def _wave_from_cursor(self) -> bool:
+        ln = self.line_at_iter(self.buf.get_iter_at_mark(self.buf.get_insert()))
+        if ln is not None and (ln.session is not self.wave_session or ln is not self.wave_line or not self.wave_pinned):
+            self.select_wave(ln.session, ln)
+        return False
+
     # ── grojimas ──
     def play_line(self, ln: Line) -> bool:
-        audio = sessions.audio_for(ln.session.path)
+        if not self.play_at(ln.session, max(0.0, (ln.seconds or 0) - 0.5)):
+            return False
+        self.wave_line = ln
+        self.update_wave()
+        return True
+
+    def play_at(self, session, start: float) -> bool:
+        audio = sessions.audio_for(session.path)
         if audio is None:
             self.status.set_text("⚠ šios sesijos garso nėra (ištrintas arba neišsaugotas)")
             return False
-        start = max(0.0, (ln.seconds or 0) - 0.5)
         try:
-            self.player.play(audio, start)
+            self.player.play(audio, max(0.0, start))
         except OSError as e:
             self.status.set_text(f"✗ nepavyko groti: {e}")
             return False
-        self.play_session = ln.session
+        first = self.play_session is None
+        self.play_session = session
         pause.hold(force=True)                    # VOX neįrašinės grojamo įrašo
         self.btn_stop.show()
+        if session is not self.wave_session or not self.wave_pinned:
+            self.wave_session, self.wave_pinned = session, True
+            self.update_wave()
         self._highlight_playing()
-        GLib.timeout_add(250, self._play_tick)
+        if first:
+            GLib.timeout_add(250, self._play_tick)
         return True
 
     def playing_line(self):
@@ -710,11 +1117,21 @@ class TextPage(Gtk.Box):
             self.tv.scroll_to_iter(r[0], 0.25, False, 0, 0)
 
     def _play_tick(self):
+        if not self._alive:
+            return False
+        if self.play_session is None:
+            return False
         if not self.player.playing():
             self.stop_playback()
             return False
         pause.hold()                              # grojama — pratęsti įrašymo pauzę
         self._highlight_playing()
+        if self.play_session is self.wave_session:
+            self.wave.set_position(self.player.position())
+            ln = self.playing_line()
+            if ln is not None and ln is not self.wave_line:          # banga paryškina tai, kas dabar skamba
+                self.wave_line = ln
+                self.wave.set_band(*line_span(ln, self.wave_session.lines))
         return True
 
     def stop_playback(self) -> None:
@@ -725,6 +1142,7 @@ class TextPage(Gtk.Box):
         s, e = self.buf.get_bounds()
         self.buf.remove_tag(self.t_play, s, e)
         self.btn_stop.hide()
+        self.wave.set_position(None)
 
     # ── statistika / eksportas ──
     def stats(self) -> dict:
@@ -798,13 +1216,14 @@ class TextPage(Gtk.Box):
                 cur = ln.session
                 head = f"{cur.when:%Y-%m-%d %H:%M} · {cur.source or '-'} · {sessions.base_name(cur.path.name)}"
                 out.append(f"\n## {head}\n" if fmt == "md" else f"\n// {head}\n")
-            ic = annotations.icon(annotations.match(self.ann, cur.path.name, ln.idx, ln.text))
+            ic = annotations.icon(annotations.match(self.ann, cur.key, ln.idx, ln.text))
             pre = f"{ic} " if ic else ""
+            text = self.display_text(ln)
             if fmt == "md":
                 who = f"**{ln.speaker}** " if ln.speaker else ""
-                out.append(f"- {pre}{who}`{ln.ts}` {ln.text}" if ln.ts else f"- {pre}{who}{ln.text}")
+                out.append(f"- {pre}{who}`{ln.ts}` {text}" if ln.ts else f"- {pre}{who}{text}")
             else:
-                out.append(pre + (f"[{ln.ts}] " if ln.ts else "") + (f"{ln.speaker}: " if ln.speaker else "") + ln.text)
+                out.append(pre + (f"[{ln.ts}] " if ln.ts else "") + (f"{ln.speaker}: " if ln.speaker else "") + text)
         return "\n".join(out).lstrip("\n") + "\n"
 
     def export_to(self, path) -> Path:

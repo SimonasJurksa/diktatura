@@ -6,6 +6,16 @@
 # ── Išvaizda ──
 # lango tema: light (kaip sistemoje), dark (tamsi), contrast (didelis kontrastas ir šriftas), compact (mažam ekranui)
 THEME=light
+# Tekste rodyti pasirinktos sesijos garso bangą (spragtelėjus — groja nuo ten): 1 / 0
+WAVEFORM=1
+# kol įrašoma — mažas indikatorius ekrano kampe (gyva banga, laikmatis, po to transkripcijos eiga): 1 / 0
+REC_PILL=1
+
+# ── Tekstas ──
+# ✨ „Švarus" Teksto rodinys — be „ee", „mhm", pasikartojimų (failai nekeičiami): 1 / 0
+CLEAN_VIEW=0
+# papildomi užpildų žodžiai švariam rodiniui, per kablelį be tarpų (pvz. nu,tipo,žinai,žodžiu)
+FILLER_WORDS=nu,tipo
 
 # ── Įrašymas ──
 # VOX: kiek sekundžių tylos uždaro įrašo failą
@@ -64,8 +74,15 @@ DELETE_EMPTY=1
 ARCHIVE_MP3=1
 # mp3 bitų greitis, kbps
 ARCHIVE_KBPS=64
-# Teksto lange rodomų paskutinių dienų skaičius (senesnės nutrimminamos)
+# Teksto lange rodomų paskutinių dienų skaičius (senesnės iš lango nutrinamos; failai lieka)
 RETENTION_DAYS=2
+# seno GARSO (wav, mp3) trynimas: off (netrinti), age (senesnį nei AUDIO_KEEP_DAYS), size (kai įrašai > AUDIO_MAX_GB)
+# tekstai lieka; netrinama: rašomas / transkribuojamas, dar be teksto, „size" — naujausias įrašas
+AUDIO_CLEANUP=off
+# age: kiek dienų laikyti garsą
+AUDIO_KEEP_DAYS=7
+# size: kiek GB leidžiama įrašų katalogui (garsas + tekstai); viršijus — trinami seniausi
+AUDIO_MAX_GB=5
 
 # ── Debug ──
 # 1 = detalus žurnalas ~/.local/state/diktatura/debug.log (įrenginiai, lygiai, sprendimai, RTF)

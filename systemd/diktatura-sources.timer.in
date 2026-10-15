@@ -1,0 +1,10 @@
+[Unit]
+Description=Diktatūra — sekami aplankai: naujų garso failų paieška kas 2 min
+
+[Timer]
+OnBootSec=3min
+# skaičiuojama nuo paskutinio paleidimo — kol transkribuojama, naujas nepradedamas
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

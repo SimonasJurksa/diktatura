@@ -43,10 +43,12 @@ MODELS = DATA_DIR / "models"
 DIARIZATION_MODELS = MODELS / "diarization"
 EMB_MODEL_FILE = DIARIZATION_MODELS / "embedding_campplus_zh_en.onnx"   # balso embedding (vardai), žr. store.EMB_MODEL
 HF_HOME = MODELS / "hf"
+SOURCES_DATA = DATA_DIR / "sources"             # sekamų aplankų tekstai: <id>/<failas>.named.txt (diktatura.sources)
 
 # Nustatymai
 CONF_FILE = CONFIG_DIR / "diktatura.conf"
 DEFAULT_CONF = REPO / "config" / "diktatura.conf.default"
+SOURCES_CONF = CONFIG_DIR / "sources.json"      # sekami aplankai (telefonas, laikrodis…)
 
 # Logai / runtime
 LOG_AUTOREC = STATE_DIR / "autorecord.log"
@@ -54,6 +56,8 @@ LOG_TRANSCRIBE = STATE_DIR / "transcribe.log"
 LOG_DEBUG = STATE_DIR / "debug.log"
 STATE_RECORDING = RUN_DIR / "recording"        # yra = šiuo metu rašoma (ikonai)
 TRANSCRIBE_LOCK = RUN_DIR / "transcribe.lock"
+PROGRESS_DIR = RUN_DIR / "progress"             # <bazė>.json — vykdomos transkripcijos eiga (diktatura.progress)
+TIMING = STATE_DIR / "timing.json"              # paskutinių transkripcijų etapų trukmės — prognozei
 
 # Kodas
 ICONS = REPO / "icons"

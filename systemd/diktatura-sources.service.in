@@ -1,0 +1,11 @@
+[Unit]
+Description=Diktatūra — sekamų aplankų transkripcija (telefonas, laikrodis…; tik „iškart" režime)
+
+[Service]
+Type=oneshot
+# --if-immediate: MODE=deferred ar AUTOTRANSCRIBE=0 — nieko nedaro (tada transkribuoja naktinis 01:30)
+ExecStart=/usr/bin/env bash @REPO@/bin/transcribe-pending.sh --sources --if-immediate
+Nice=10
+IOSchedulingClass=idle
+
+# Šablonas: @REPO@ pakeičia `make install-units` arba Nustatymai (diktatura.services.install_units).

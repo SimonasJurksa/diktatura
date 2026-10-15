@@ -7,6 +7,7 @@
 # Nustatymai (gyvai, kiekvieną ciklą): SLACK_GRACE_SEC, MAX_REC_SEC, AUTOTRANSCRIBE, MODE.
 # MAX_REC_SEC — saugiklis (pvz. paliktas huddle): įrašas sustabdomas ir NAUJAS nepradedamas, kol skambučio
 # srautas nedings (kitaip pakibęs srautas gamintų begalę failų).
+# Pilnas diskas: kol laisvos vietos < DIKTATURA_MIN_FREE_MB (numatyta 200), naujas įrašas nepradedamas (kaip VOX).
 # Env (nebūtini): DIKTATURA_MATCH (klientų regex), DIKTATURA_POLL (s), DIKTATURA_PACTL (testams — imitacija).
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/common.sh"
@@ -18,8 +19,23 @@ PACTL="${DIKTATURA_PACTL:-pactl}"
 
 log(){ echo "$(date '+%F %T') $*" | tee -a "$LOG_AUTOREC" >&2; }
 
+MIN_FREE_MB="${DIKTATURA_MIN_FREE_MB:-200}"
+
 REC_PID=""
 CUR_FILE=""
+disk_full=0
+
+disk_ok() {
+  local free; free="$(df -Pm "$RECORDINGS" 2>/dev/null | awk 'NR==2{print $4}')"
+  if [ -n "$free" ] && [ "$free" -lt "${MIN_FREE_MB%.*}" ]; then
+    [ "$disk_full" = 1 ] || log "⚠ diske liko tik ${free} MB — skambučio neįrašau, kol neatsiras ≥ ${MIN_FREE_MB} MB (atlaisvink vietos; įrašų garsui — Nustatymai → Archyvas → „Seno garso trynimas\")"
+    disk_full=1
+    return 1
+  fi
+  [ "$disk_full" = 1 ] && log "✓ vietos vėl yra (${free} MB)"
+  disk_full=0
+  return 0
+}
 
 call_active() {
   local hits
@@ -84,7 +100,7 @@ while true; do
   load_config   # nustatymai gyvai — keitimai veikia be restarto
   if call_active; then
     idle_since=0
-    [ -z "$REC_PID" ] && [ "$maxed" = 0 ] && start_rec
+    [ -z "$REC_PID" ] && [ "$maxed" = 0 ] && disk_ok && start_rec
     if [ -n "$REC_PID" ] && [ $(( $(date +%s) - ${REC_START:-0} )) -ge "${MAX_REC_SEC%.*}" ]; then
       log "⏱ pasiekta maksimali trukmė (${MAX_REC_SEC}s) — stabdau (galbūt paliktas huddle); naujas įrašas — tik naujam skambučiui"
       stop_rec

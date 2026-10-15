@@ -1,7 +1,8 @@
 """Diktatūra — systemd --user servisų valdymas (tik stdlib: naudoja ikona, Nustatymai, doctor).
 
 Įrašymo režimas = kuris įrašymo servisas aktyvus: vox (diktatura-vox), slack (diktatura-autorecord) arba off.
-Vienu metu — tik vienas (servisuose Conflicts=). Naktinis — diktatura-nightly.timer.
+Vienu metu — tik vienas (servisuose Conflicts=). Naktinis — diktatura-nightly.timer. Sekami aplankai (telefonas…) —
+diktatura-sources.timer (kas ~2 min, tik MODE=immediate); įjungiamas pridėjus pirmą aplanką (Nustatymai).
 Testams: DIKTATURA_SYSTEMCTL — netikra systemctl komanda; DIKTATURA_SYSTEMD_DIR — kur „įdiegti" unit'ai.
 """
 import os
@@ -18,8 +19,10 @@ MODE_LABELS = {"vox": "VOX — balso aktyvumas (diktavimas, pagauna ir skambuči
 TRAY = "diktatura-tray.service"
 TIMER = "diktatura-nightly.timer"
 ASR = "diktatura-asr.service"
+SOURCES_TIMER = "diktatura-sources.timer"
 UNITS = ("diktatura-autorecord.service", "diktatura-vox.service", "diktatura-tray.service",
-         "diktatura-nightly.service", "diktatura-nightly.timer", "diktatura-asr.service")
+         "diktatura-nightly.service", "diktatura-nightly.timer", "diktatura-asr.service",
+         "diktatura-sources.service", "diktatura-sources.timer")
 
 
 def systemctl(*args, timeout=20) -> subprocess.CompletedProcess:
@@ -75,6 +78,25 @@ def set_asr_server(enabled: bool) -> tuple:
     return True, f"ASR serveris {'įjungtas (modelis bus laikomas atmintyje)' if enabled else 'išjungtas'}"
 
 
+def spawn_detached(cmd: list, name: str = "darbas", env: dict = None) -> None:
+    """Paleisti ilgą darbą (transkripciją) atskirai nuo lango / ikonos: per `systemd-run --user` (savas cgroup —
+    neužmuš uždarius langą ar perkrovus ikoną); be systemd-run (ar testuose) — nauja sesija. env — papildomi kintamieji."""
+    import shutil
+    import time
+    extra = {"PYTHONPATH": str(paths.REPO), **(env or {})}
+    for k in ("DIKTATURA_CONFIG_DIR", "DIKTATURA_DATA", "DIKTATURA_STATE", "DIKTATURA_RUN"):
+        if os.environ.get(k):
+            extra.setdefault(k, os.environ[k])          # ta pati aplinka (testai / kitas duomenų katalogas)
+    if shutil.which("systemd-run") and not os.environ.get("DIKTATURA_SYSTEMCTL"):
+        unit = f"diktatura-{name}-{int(time.time() * 1000)}"
+        subprocess.Popen(["systemd-run", "--user", "--collect", "--quiet", f"--unit={unit}",
+                          *[f"--setenv={k}={v}" for k, v in extra.items()], "--", *cmd],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                         env={**os.environ, **extra}, cwd=str(paths.REPO))
+
+
 def units_dir() -> Path:
     return Path(os.environ.get("DIKTATURA_SYSTEMD_DIR") or Path.home() / ".config" / "systemd" / "user")
 
@@ -82,6 +104,32 @@ def units_dir() -> Path:
 def render_unit(name: str) -> str:
     """systemd/<name>.in su @REPO@ -> šio repo kelias (taip, kaip daro `make install-units`)."""
     return (paths.REPO / "systemd" / f"{name}.in").read_text(encoding="utf-8").replace("@REPO@", str(paths.REPO))
+
+
+def install_units() -> tuple:
+    """Kaip `make install-units`: šablonai -> <systemd user>/ + daemon-reload. -> (ok, pranešimas)."""
+    d = units_dir()
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        for u in UNITS:
+            (d / u).write_text(render_unit(u), encoding="utf-8")
+    except OSError as e:
+        return False, f"servisų įdiegti nepavyko: {e}"
+    r = systemctl("daemon-reload")
+    return r.returncode == 0, "servisai įdiegti / atnaujinti" if r.returncode == 0 else (r.stderr or r.stdout).strip()
+
+
+def set_sources_timer(enabled: bool) -> tuple:
+    """Sekamų aplankų timer'is (diktatura-sources.timer). Jei unit'ų dar nėra (senas diegimas) — įdiegiami."""
+    if enabled and units_status().get(SOURCES_TIMER) != "ok":
+        ok, m = install_units()
+        if not ok:
+            return False, m
+    r = systemctl("enable" if enabled else "disable", "--now", SOURCES_TIMER)
+    if r.returncode != 0:
+        return False, f"sekamų aplankų timer'io {'įjungti' if enabled else 'išjungti'} nepavyko: " \
+                      f"{(r.stderr or r.stdout).strip()}"
+    return True, f"sekami aplankai {'tikrinami kas ~2 min' if enabled else 'nebetikrinami'}"
 
 
 def units_status() -> dict:
