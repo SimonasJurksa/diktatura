@@ -76,6 +76,7 @@ def test_t11_add_via_settings_creates_tab_and_timer(win, phone, fake_systemd, gt
     assert src.name == "Mano telefonas" and src.since == 0
     assert services.is_enabled(services.SOURCES_TIMER) and "Sekamas aplankas" in st.msg.get_text()
     assert tab_titles(win) == ["🎙 Pokalbiai", "📁 Mano telefonas"] and win.text_tabs.nb.get_show_tabs()
+    assert win.text_tabs.current() is win.text                      # naujas skirtukas neperjungia
     rows = st.src_list.get_children()
     assert len(rows) == 1 and "laukia 1" in rows[0].get_children()[1].get_children()[1].get_text()
     assert not st.add_source(str(phone), "Dar kartą") and "jau sekamas" in st.msg.get_text()
@@ -109,6 +110,7 @@ def test_t12_source_tab_texts_audio_header_and_now(win, env, phone, monkeypatch,
     sources.write_meta(src, a, base)
     sources.with_suffix(base, ".named.txt").write_text("[0:00:01] Tu: labas iš telefono\n[0:00:04] Ona: sveikas\n",
                                                        encoding="utf-8")
+    env.write_conf(RETENTION_DAYS=365)                                  # failo vardo data — fiksuota
     win.reload_sources()
     tp = win.text_tabs.tabs["telefonas"]
     win.text_tabs.show_source("telefonas")
@@ -131,6 +133,20 @@ def test_t12_source_tab_texts_audio_header_and_now(win, env, phone, monkeypatch,
     ev = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
     ev.keyval, ev.state = Gdk.KEY_f, Gdk.ModifierType.CONTROL_MASK
     assert win._on_key(win, ev) and tp.search.is_focus()            # Ctrl+F — matomo skirtuko paieška
+
+
+def test_t13_window_opens_on_main_tab_with_sources(env, fake_systemd, gtk, phone):
+    from diktatura import sources
+    from diktatura.ui.app import MainWindow
+    sources.add("Telefonas", phone)
+    w = MainWindow(auto_refresh=False)
+    w.show_all()
+    gtk.pump(0.05)
+    try:
+        assert w.text_tabs.current() is w.text                      # ne „Telefonas" (GTK pirmas matomas puslapis)
+    finally:
+        w.destroy()
+        gtk.pump(0.02)
 
 
 def test_t13_theme_reaches_source_tabs(win, phone):

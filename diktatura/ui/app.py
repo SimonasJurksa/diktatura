@@ -35,6 +35,7 @@ class TextTabs(Gtk.Box):
         self.nb.set_scrollable(True)
         self.nb.set_show_border(False)
         self.nb.append_page(self.main, Gtk.Label(label="🎙 Pokalbiai"))
+        self.main.show_all()              # dar prieš skirtukus: GTK aktyviu laiko pirmą MATOMĄ puslapį
         self.tabs = {}                    # šaltinio id -> TextPage
         self.labels = {}
         self.pack_start(self.nb, True, True, 0)
@@ -51,6 +52,7 @@ class TextTabs(Gtk.Box):
         """Skirtukai = sekami aplankai (išjungtas, bet jau turintis tekstų — lieka matomas)."""
         items = [s for s in sources.load() if s.enabled or s.out_dir.exists()]
         want = {s.id: s for s in items}
+        cur = self.nb.get_nth_page(self.nb.get_current_page()) if self.nb.get_n_pages() else None
         for sid in [k for k in self.tabs if k not in want]:
             page = self.tabs.pop(sid)
             self.labels.pop(sid, None)
@@ -72,6 +74,9 @@ class TextTabs(Gtk.Box):
             if theme is not None:
                 page.on_theme(theme)
         self.nb.set_show_tabs(bool(self.tabs))
+        # naujas skirtukas neturi tapti aktyviu (GTK renkasi pirmą MATOMĄ puslapį — kuriant langą tai būtų jis)
+        keep = cur if cur is not None and self.nb.page_num(cur) >= 0 else self.main
+        self.nb.set_current_page(self.nb.page_num(keep))
 
     def show_source(self, sid: str) -> None:
         if sid in self.tabs:

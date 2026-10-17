@@ -344,7 +344,7 @@ class TextPage(Gtk.Box):
         night = config.load()["MODE"] == "deferred"
         state = ("⚠ aplanko nėra" if not src.dir.is_dir() else "išjungtas (nesekamas)" if not src.enabled
                  else f"laukia {c['pending']}" + (" — transkribuos naktį" if night and c["pending"] else ""))
-        self.lbl_source.set_text(f"📂 {src.path} · failų {c['files']}, tekstų {c['texts']} · {state}")
+        self.lbl_source.set_text(f"📂 {sources.short_path(src.path)} · failų {c['files']}, tekstų {c['texts']} · {state}")
         self.btn_src_now.set_sensitive(bool(c["pending"]))
 
     def transcribe_source_now(self) -> None:

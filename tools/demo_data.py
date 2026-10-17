@@ -40,7 +40,7 @@ SESSIONS = [
     ("slack", TODAY - timedelta(hours=1), [
         ("Jonas", "Ar visi girdi? Pradedam trumpą susitikimą."),
         ("Kolega?nez2", "Girdžiu. Turiu klausimą dėl serverio apkrovos."),
-        ("Tu", "Apkrovą pažiūrėsiu po pietų ir parašysiu kanale."),
+        ("Tu", "Ee, nu, apkrovą pažiūrėsiu po pietų ir parašysiu kanale."),
         ("Kolega?nez1", "Ačiū, tada laukiam žinutės."),
         ("Jonas", "Puiku, susitikimas baigtas."),
     ]),
@@ -88,6 +88,10 @@ def main():
             t += dur
         base.with_suffix(".named.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         fake_peaks(base.with_suffix(".peaks"), spans, t + 3, k)
+        if k == 0:                                     # vienai sesijai — ir garsas (tyla): „▶ Groti", „🔁" aktyvūs
+            with wave.open(str(base.with_suffix(".wav")), "wb") as w:
+                w.setnchannels(2); w.setsampwidth(2); w.setframerate(16000)
+                w.writeframes(bytes(16000 * 4 * (t + 3)))
     # žymės: ⭐ svarbu ir ☐ užduotis pirmoje sesijoje (rodo README nuotraukoje)
     src0, when0, rows0 = SESSIONS[0]
     name0 = f"{src0}_{when0:%Y%m%d_%H%M%S}.named.txt"

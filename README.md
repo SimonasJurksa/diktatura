@@ -29,6 +29,10 @@ Diktatūra jos neįrašinėja):
 
 ![Apmokymai](docs/img/training.png)
 
+**⏳ Transkripcijos eiga** — kiek liko dabartiniam failui (su banga: apdorota dalis ryški) ir visai eilei:
+
+![Eiga](docs/img/progress.png)
+
 **⚙ Nustatymai** — viskas su paaiškinimais lietuviškai; pakeitimai veikia iškart, be perkrovimo. Viršuje —
 **🔍 paieška** (Ctrl+F): lieka tik susiję nustatymai, rastas tekstas paryškinamas („zodziai" randa ir „žodžiai"). Apačioje
 „Atstatymas ir duomenys": atkurti numatytus nustatymus ir **ištrinti įrašus ir tekstus** (pradėti kaupti iš naujo;
@@ -48,6 +52,9 @@ juostos persikelia į kelias eilutes, o kas netelpa — slenkama:
 nežinomų balsų. Paspaudus — meniu (⚙ Nustatymai viršuje), vidurinis klik — iškart Nustatymai:
 
 ![Status bar būsenos](docs/img/tray.png)
+
+**Daugiau nuotraukų** — paieška, kontekstinis meniu, švarus tekstas, sekami aplankai, ⏳ eiga, 💊 įrašymo
+indikatorius, kompaktiška tema: **[docs/GALLERY.md](docs/GALLERY.md)**.
 
 *(Ekranuose — pavyzdiniai vardai ir tekstas, ne tikri duomenys.)*
 

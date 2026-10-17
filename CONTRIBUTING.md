@@ -43,6 +43,8 @@ Taisyklės:
 - Sekamų aplankų garso failai — vartotojo: niekada netrinti, nekeisti, nekonvertuoti (tekstai — `<duomenys>/sources/`).
 - UI: mygtukų eilėms — `flow()` (ne `Gtk.Box`), spalvoms — temos (`ui/themes.py`), ne „kietos" reikšmės; patikrinti
   visas 4 temas ir siaurą langą (`tools/screenshots.sh` + `MainWindow.apply_theme(...)`).
+- Pakeitus matomą elgseną — `bash tools/screenshots.sh` (demo duomenys, broadway): atnaujina `docs/img/*.png`
+  README ir `docs/GALLERY.md` galerijai (`tools/gallery.py` — kiekvienas langas, dialogas, tema).
 
 ## 3. Testai
 

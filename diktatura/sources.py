@@ -86,6 +86,12 @@ def save(items: list) -> None:
     os.replace(tmp, f)
 
 
+def short_path(path) -> str:
+    """Rodymui: namų katalogas -> „~"."""
+    p, home = str(path), str(Path.home())
+    return "~" + p[len(home):] if p == home or p.startswith(home + "/") else p
+
+
 def slug(name: str) -> str:
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]+", "-", s).strip("-") or "aplankas"

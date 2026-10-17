@@ -157,7 +157,7 @@ class SettingsPage(Gtk.Box):
             info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             info.pack_start(label(s.name, css="dk-title"), False, False, 0)
             missing = "" if s.dir.is_dir() else " · ⚠ aplanko nėra"
-            path = label(f"{s.path}{' (su poaplankiais)' if s.recursive else ''} · failų {c['files']}, tekstų "
+            path = label(f"{sources.short_path(s.path)}{' (su poaplankiais)' if s.recursive else ''} · failų {c['files']}, tekstų "
                          f"{c['texts']}, laukia {c['pending']}{missing}", css="dk-help")
             path.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
             info.pack_start(path, False, False, 0)

@@ -65,6 +65,7 @@ def test_t1_add_update_remove_and_guards(env, S, phone, tmp_path):
     S.remove("telefonas")
     assert [s.id for s in S.load()] == ["telefonas-2"]
     assert S.slug("Studijos Ąžuolas mic") == "studijos-azuolas-mic" and S.slug("!!!") == "aplankas"
+    assert S.short_path(Path.home() / "Telefonas") == "~/Telefonas" and S.short_path("/mnt/x") == "/mnt/x"
     (env.config / "sources.json").write_text("sugadinta")
     assert S.load() == []
 
