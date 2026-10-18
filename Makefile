@@ -228,6 +228,9 @@ uninstall: ## Pašalinti servisus (duomenys ir nustatymai lieka)
 ## ——— Privatumas / testai ———
 hooks: ## Įjungti privatumo sargą (git hooks) — BŪTINA kiekvienam kūrėjui po clone
 	@cd $(REPO) && chmod +x .githooks/* && git config core.hooksPath .githooks && echo "✓ privatumo sargas įjungtas (.githooks: pre-commit + pre-push)"
+lint: ## Statinė patikra (pyflakes): nenaudojami importai, kintamieji, neapibrėžti vardai
+	@cd $(REPO) && $(PY) -m pyflakes diktatura tools tests | grep -v "ui/gtk.py:9:\|tests/conftest.py:20:\|test_regression_ui.py:8:" ; \
+	 test $${PIPESTATUS[0]} -eq 0 -o $${PIPESTATUS[1]} -eq 1 && echo "✓ lint švarus" || { echo "✗ lint"; exit 1; }
 test-privacy: ## Privatumo sargo testai (gitignore + hooks + darbinio medžio auditas)
 	@bash $(REPO)/tests/privacy_guard_test.sh
 test: ## Greiti testai (be modelių, < 1 min): nustatymai, VOX, Slack, eilė, kalbėtojai, UI, privatumas
@@ -245,4 +248,4 @@ fixtures: ## Atsisiųsti LT kalbos testų klipus (Common Voice, CC0, ~220 KB; ne
         transcribe-pending transcribe progress cleanup sources mcp stop-transcribe nightly-on nightly-off nightly-now \
         tray-on tray-off tray-restart restart-all stale speakers name-unknown assign enroll backup-voices restore-voices backups \
         deps setup models model-convert install-units install uninstall hooks test-privacy \
-        test test-full test-e2e fixtures
+        test test-full test-e2e fixtures lint

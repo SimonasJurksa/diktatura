@@ -48,7 +48,7 @@ def test_b11_restore_replaces_and_keeps_current(voices):
     assert backup.describe(backup.list_backups()[-1])["voices"] == 1          # ta kopija — su Rūta
     with pytest.raises(ValueError):
         bad = voices.data / "backups" / "voices-x.tar.gz"
-        with tarfile.open(bad, "w:gz") as tar:
+        with tarfile.open(bad, "w:gz"):
             pass
         backup.restore(bad, keep_current=False)
 

@@ -110,7 +110,7 @@ def test_q14_skip_and_stop_need_confirmation(env, P, gtk):
 
 def test_q15_run_loop_closes_and_stops_timer(env, P, gtk):
     from diktatura.ui.progress_dialog import ProgressDialog
-    from diktatura.ui.gtk import GLib, Gtk
+    from diktatura.ui.gtk import Gtk
     n = {"snap": 0}
 
     def snap_fn():

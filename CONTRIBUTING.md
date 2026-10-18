@@ -44,6 +44,7 @@ Taisyklės:
 - UI: mygtukų eilėms — `flow()` (ne `Gtk.Box`), spalvoms — temos (`ui/themes.py`), ne „kietos" reikšmės; patikrinti
   visas 4 temas ir siaurą langą (`tools/screenshots.sh` + `MainWindow.apply_theme(...)`).
 - Po kodo pakeitimų veikiantys servisai vykdo seną kodą — `make stale` parodo kuriuos, `make restart-all` perkrauna.
+- Prieš commit'ą — `make lint` (pyflakes) ir `make test`.
 - Kiekvienas push į `main` paleidžia GitHub Actions (`.github/workflows/test.yml`: `make test` + `test-privacy`).
 - Pakeitus matomą elgseną — `bash tools/screenshots.sh` (demo duomenys, broadway): atnaujina `docs/img/*.png`
   README ir `docs/GALLERY.md` galerijai (`tools/gallery.py` — kiekvienas langas, dialogas, tema).

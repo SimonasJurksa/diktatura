@@ -1,7 +1,6 @@
 """I1–I4, I6: pagrindinis langas, Tekstas, Nustatymai, status bar ikonos logika."""
 import os
 import subprocess
-import sys
 import time
 from datetime import datetime, timedelta
 

@@ -1,6 +1,5 @@
 """V1–V5: 💊 įrašymo indikatoriaus logika (ui.pill be GTK): lygiai iš rašomo wav, kas rodoma po įrašo, būsenos."""
 import struct
-import time
 import wave
 from pathlib import Path
 

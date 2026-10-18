@@ -2,7 +2,6 @@
 savininkas mato ar naudoja (numatytuosius nustatymus, komandas, transkripcijos formatą, eilės taisykles…).
 Sąmoningas pakeitimas = atnaujinti ir šį testą (taip pakeitimas tampa matomas peržiūroje), ne „pataisyti" kodą atgal.
 """
-import json
 import os
 import re
 import subprocess
@@ -78,7 +77,7 @@ MAKE_TARGETS = (
     "stop-transcribe nightly-on nightly-off nightly-now tray-on tray-off tray-restart speakers name-unknown assign "
     "enroll speakers-migrate speakers-relabel backup-voices restore-voices backups deps setup models model-convert "
     "desktop install-units install uninstall "
-    "hooks test-privacy test test-full test-e2e fixtures").split()
+    "hooks lint test-privacy test test-full test-e2e fixtures").split()
 
 
 def test_s2_make_targets_locked_and_in_help(env):

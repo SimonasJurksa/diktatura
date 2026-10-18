@@ -164,7 +164,7 @@ def test_t4_empty_or_zero_byte_source_is_skipped_not_deleted(env, S, phone, fake
 def test_t5_pending_script_sources_and_modes(env, S, phone, fake_asr):
     from diktatura import progress
     env.write_conf(ARCHIVE_MP3=0, MODE="deferred")
-    a = rec(phone / "a.wav")
+    rec(phone / "a.wav")
     b = rec(phone / "sub" / "b.wav")
     vox = rec(env.recordings / "vox_20261014_090000.wav", stereo=True)
     S.add("Telefonas", phone)

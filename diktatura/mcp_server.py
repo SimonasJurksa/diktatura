@@ -9,7 +9,6 @@ Paleidimas: bin/mcp-server.sh  (JSON-RPC 2.0 po vieną žinutę eilutėje stdin 
 """
 import json
 import sys
-from datetime import date
 
 from diktatura import sessions, transcripts
 

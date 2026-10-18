@@ -2,7 +2,6 @@
 
 Tikras Ąžuolas per serverį — tests/full/test_asr_full.py.
 """
-import os
 import subprocess
 import sys
 import threading

@@ -20,6 +20,8 @@ jobs:
       - name: .venv (be torch) + kalbėtojų modeliai + LT fixture'ai
         run: |
           make hooks setup models fixtures
+      - name: make lint
+        run: make lint
       - name: make test
         run: make test
       - name: make test-privacy
