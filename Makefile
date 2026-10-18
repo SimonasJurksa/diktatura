@@ -50,6 +50,7 @@ status: ## Bendra būsena (režimas, servisai, nustatymai, įrašai, RAM/diskas)
 	@for u in $(RECORDERS) diktatura-tray diktatura-nightly.timer diktatura-sources.timer; do \
 	  e=$$($(SC) is-enabled $$u 2>/dev/null); printf "  %-26s %s / %s\n" "$$u" "$$($(SC) is-active $$u 2>/dev/null)" "$${e:-neįdiegtas}"; done
 	@$(SC) list-timers diktatura-nightly.timer --no-pager 2>/dev/null | grep diktatura-nightly | sed 's/^/  naktinis: /' || true
+	@$(MAKE) -s stale | sed 's/^/  /'
 	@echo "─ Nustatymai ─"; $(CFG) show
 	@echo "─ Vyksta dabar ─"; \
 	 if [ -f "$(RUN_DIR)/recording" ]; then echo "  🔴 įrašoma: $$(basename "$$(cut -d' ' -f2- "$(RUN_DIR)/recording")")"; fi; \
@@ -97,6 +98,12 @@ stop: ## Laikinai sustabdyti įrašymą (po perkrovimo vėl įsijungs; visam —
 	@$(SC) stop $(RECORDERS) && echo "🛑 įrašymas sustabdytas"
 restart: ## Perkrauti įrašymo servisą (po kodo pakeitimų; nustatymams nereikia)
 	@for s in $(RECORDERS); do $(SC) is-enabled -q $$s 2>/dev/null && $(SC) restart $$s && echo "✓ perkrauta: $$s"; done; true
+restart-all: ## Perkrauti VISUS veikiančius servisus su nauju kodu (po git pull): įrašymas, ikona, ASR serveris
+	@$(MAKE) -s restart; $(SC) is-active -q diktatura-tray && $(MAKE) -s tray-restart; \
+	 $(SC) is-active -q diktatura-asr && $(SC) restart diktatura-asr && echo "✓ perkrauta: diktatura-asr"; true
+stale: ## Kurie veikiantys servisai paleisti su senesniu kodu nei repo (po git pull — make restart-all)
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -c "from diktatura import services; s=services.stale_units(); \
+	 print('\n'.join(f'⚠ {u} — senas kodas: {c}' for u,c in s) if s else '✓ visi servisai su dabartiniu kodu')"
 rec-toggle: ## Rankinis įrašymas: 1-as kartas pradeda, 2-as sustabdo
 	@bash $(REPO)/bin/rec-toggle.sh
 
@@ -182,6 +189,13 @@ speakers-migrate: ## Pereiti prie naujo balso modelio (seni balsai -> archyvas):
 speakers-relabel: ## Perskaičiuoti kalbėtojus paskut. dienų tekstuose:  make speakers-relabel [DAYS=2] [APPLY=1]
 	@$(RUN) diktatura.speakers.relabel --days $(or $(DAYS),2) $(if $(APPLY),--apply)
 
+backup-voices: ## 💾 Balsų atsarginė kopija (registruoti + laukiantys vardo) -> <duomenys>/backups/ (laikoma 10)
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.backup create
+restore-voices: ## Atkurti balsus iš kopijos:  make restore-voices [F=failas]  (numatyta — naujausia; dabartiniai pirma išsaugomi)
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.backup restore $(F)
+backups: ## Balsų kopijų sąrašas
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.backup list
+
 ## ——— Diegimas ———
 deps: ## Įdiegti sistemos paketus (sudo apt): ffmpeg (+ffplay), pactl/paplay, notify-send, GTK/AppIndicator, broadwayd
 	sudo apt install -y ffmpeg pulseaudio-utils libnotify-bin python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
@@ -205,7 +219,7 @@ install: hooks setup models install-units desktop ## Pilnas įdiegimas: venv, mo
 	@$(SC) enable --now diktatura-tray diktatura-nightly.timer
 	@for s in $(RECORDERS); do $(SC) is-enabled -q $$s 2>/dev/null && exit 0; done; $(MAKE) -s mode-slack
 	@test -f $(MODELS)/azuolas-ct2/model.bin || echo "⚠ Ąžuolo modelio nėra: make model-convert (arba make model-medium)"
-	@echo "✓ įdiegta. Būsena: make status"
+	@echo "✓ įdiegta. Būsena: make status.  Po kodo atnaujinimo (git pull): make restart-all"
 uninstall: ## Pašalinti servisus (duomenys ir nustatymai lieka)
 	@$(SC) disable --now $(UNITS) 2>/dev/null; for u in $(UNITS); do rm -f $(SYSD)/$$u; done; $(SC) daemon-reload; \
 	 rm -f $(APPS)/diktatura.desktop; \
@@ -229,6 +243,6 @@ fixtures: ## Atsisiųsti LT kalbos testų klipus (Common Voice, CC0, ~220 KB; ne
         config set config-edit config-reset auto-on auto-off immediate defer model-azuolas model-medium \
         asr-server-on asr-server-off \
         transcribe-pending transcribe progress cleanup sources mcp stop-transcribe nightly-on nightly-off nightly-now \
-        tray-on tray-off tray-restart speakers name-unknown assign enroll \
+        tray-on tray-off tray-restart restart-all stale speakers name-unknown assign enroll backup-voices restore-voices backups \
         deps setup models model-convert install-units install uninstall hooks test-privacy \
         test test-full test-e2e fixtures

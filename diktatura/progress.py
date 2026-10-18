@@ -197,6 +197,36 @@ def rates(model: str = None, hist: list = None) -> dict:
     return r
 
 
+def prediction_error(hist: list = None, model: str = None, last: int = 10):
+    """Kiek ankstesnės prognozės skyrėsi nuo tikrovės: kiekvienai iš paskutinių `last` transkripcijų SU KALBA prognozė
+    daroma iš ANKSTESNIŲ įrašų greičių (kaip tada būtų buvę), jau žinant VAD kalbos kiekį (tokią prognozę rodo ⏳
+    langelis didžiąją laiko dalį), ir lyginama su tikra trukme. Įrašai be kalbos (modelis nekrautas, ~1 s) neįtraukiami —
+    jie iškreiptų. -> (medianinė santykinė paklaida, įrašų sk.) arba (None, 0), kai tokių įrašų mažiau nei 3."""
+    recs = [x for x in (history() if hist is None else hist) if isinstance(x, dict) and x.get("audio")
+            and x.get("phases") and (model is None or x.get("model") == model)]
+    spoken = [i for i, x in enumerate(recs) if float(x["phases"].get("asr", 0)) > 0 and x.get("speech")]
+    if len(spoken) < 3:
+        return None, 0
+    errs = []
+    for i in spoken[-last:]:
+        if i < 2:
+            continue
+        rec, before = recs[i], recs[:i]
+        r = rates(rec.get("model"), before)
+        actual = sum(float(v) for v in rec["phases"].values())
+        speech = [float(v) for v in rec["speech"]]
+        pred = sum(phase_plan(rec.get("kind", "named"), float(rec["audio"]), r, speech, [v <= 0 for v in speech]).values())
+        errs.append(abs(pred - actual) / actual)
+    if not errs:
+        return None, 0
+    errs.sort()
+    return errs[len(errs) // 2], len(errs)
+
+
+def fmt_error(err, n: int) -> str:
+    return f"ankstesnių {n} prognozių paklaida ±{int(round(err * 100))} %" if err is not None else ""
+
+
 def _ratio(pool, value, unit, default: float, k: float) -> float:
     """(Σ value + default × k) / (Σ unit + k): ilgi įrašai sveria daugiau nei trumpi su pastoviomis sąnaudomis, o kol
     istorijos mažai — arti numatytojo."""
@@ -496,9 +526,29 @@ def _batch_start(hist: list, running_start: float) -> tuple:
     return start, n
 
 
+def queue_busy() -> bool:
+    """Ar kas nors laiko transkripcijos užraktą (vykdo ar laukia eilėje). Greita (be /proc skenavimo): ikona
+    klausia kas 2 s, o visų procesų skaitymas be reikalo kainuotų CPU. Užraktas tik patikrinamas — neperimamas."""
+    import fcntl
+    try:
+        with open(paths.TRANSCRIBE_LOCK, "a+") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.flock(fh, fcntl.LOCK_UN)
+            return False
+    except OSError:
+        return True                                  # nežinia — tegul skenuoja
+
+
 def snapshot(now: float = None, procs: dict = None) -> Snapshot:
     """Kas dabar transkribuojama, kas laukia, kiek liko (žr. modulio aprašą)."""
     now = time.time() if now is None else now
+    if procs is None and not queue_busy():           # niekas netranskribuoja — be /proc skenavimo
+        snap = Snapshot(now=now, rates=rates(_model_setting(), history()))
+        snap.waiting_night = pending_files()
+        return snap
     procs = scan_procs() if procs is None else procs
     kids = children_map(procs)
     run_dir = paths.RUN_DIR.resolve()
@@ -661,6 +711,9 @@ def describe(snap: Snapshot) -> list:
                    + ("  (naktinis)" if j.state == "pending" else ""))
     if abs(snap.slow - 1.0) > 0.15:
         out.append(f"Dabar {snap.slow:.1f}× {'lėčiau' if snap.slow > 1 else 'greičiau'} nei įprastai (CPU apkrova).")
+    e = fmt_error(*prediction_error())
+    if e:
+        out.append(f"({e[0].upper() + e[1:]})")
     return out
 
 

@@ -21,7 +21,7 @@ make doctor          # ar viskas vietoje
 
 | Kur | Kas |
 |---|---|
-| `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py`, `reset.py`, `cleanup.py` (seno garso trynimas), `progress.py` (transkripcijos eiga ir prognozė), `sources.py` (sekami aplankai), `waveform.py` (🌊 smailės; `compute()` — tik `.venv`), `fillers.py` (✨ užpildai), `transcripts.py` (tekstai be GTK), `mcp_server.py` (🔌 MCP, tik skaito) | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
+| `diktatura/paths.py`, `config.py`, `sessions.py`, `services.py`, `debug.py`, `annotations.py`, `reset.py`, `cleanup.py` (seno garso trynimas), `progress.py` (transkripcijos eiga ir prognozė), `sources.py` (sekami aplankai), `waveform.py` (🌊 smailės; `compute()` — tik `.venv`), `fillers.py` (✨ užpildai), `transcripts.py` (tekstai be GTK), `mcp_server.py` (🔌 MCP, tik skaito), `backup.py` (💾 balsų kopija) | **tik stdlib** — importuoja ir `.venv`, ir sistemos `python3` (UI) |
 | `diktatura/audio/` | `vox.py` (VOX daemon'as, `VoxGate` — gryna logika), `prefilter.py` (Silero VAD), `echo.py` (kolegų garso šalinimas iš mikrofono kanalo) |
 | `diktatura/asr/` | `transcribe.py` (mono), `transcribe_named.py` (stereo + vardai), `dialog.py` (de-dup), `server.py`/`client.py` (nuolat įkrautas modelis) |
 | `diktatura/speakers/` | `store.py` (balsų saugykla, stdlib), `speakerlib.py` (embedding'ai, griežtas vardų priskyrimas), `teach.py` (mokymasis iš pataisymo), `migrate.py` / `relabel.py` (balso modelio keitimas), įrankiai |
@@ -43,6 +43,8 @@ Taisyklės:
 - Sekamų aplankų garso failai — vartotojo: niekada netrinti, nekeisti, nekonvertuoti (tekstai — `<duomenys>/sources/`).
 - UI: mygtukų eilėms — `flow()` (ne `Gtk.Box`), spalvoms — temos (`ui/themes.py`), ne „kietos" reikšmės; patikrinti
   visas 4 temas ir siaurą langą (`tools/screenshots.sh` + `MainWindow.apply_theme(...)`).
+- Po kodo pakeitimų veikiantys servisai vykdo seną kodą — `make stale` parodo kuriuos, `make restart-all` perkrauna.
+- Kiekvienas push į `main` paleidžia GitHub Actions (`.github/workflows/test.yml`: `make test` + `test-privacy`).
 - Pakeitus matomą elgseną — `bash tools/screenshots.sh` (demo duomenys, broadway): atnaujina `docs/img/*.png`
   README ir `docs/GALLERY.md` galerijai (`tools/gallery.py` — kiekvienas langas, dialogas, tema).
 

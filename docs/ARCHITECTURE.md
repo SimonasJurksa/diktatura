@@ -66,10 +66,15 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   names`, mono `vad → load → asr`; Whisper etapuose — kiek kanalo garso apdorota, po kiekvieno segmento, ≤ 1 kartą/s;
   `pos` — iki kur ORIGINALAUS įrašo (VAD apkarpymas atstatytas) ir `peaks` — bangos failas: `processed_secs()` /
   `peaks_file()` ⏳ bangai);
-  PROGNOZĖ — etapų greičiai iš `timing.json` (paskutinės 50 transkripcijų; sumų santykis + švelninimas numatytaisiais,
+  PAKLAIDA — `prediction_error()`: paskutinėms 10 transkripcijų su kalba prognozė iš ANKSTESNIŲ įrašų (žinant VAD
+  kalbą) vs tikra trukmė, mediana (⏳ pastaba „ankstesnių 10 prognozių paklaida ±27 %"; be kalbos įrašai neįtraukiami —
+  modelis nekrautas, ~1 s, iškreiptų iki ±900 %). PROGNOZĖ — etapų greičiai iš `timing.json` (paskutinės 50 transkripcijų; sumų santykis + švelninimas numatytaisiais,
   kol istorijos mažai) × garso / VAD kalbos trukmė; Whisper etape — tikras greitis; sulėtėjimas (baigtų etapų ir
   dabartinio tikra / numatyta trukmė) taikomas likusiems etapams ir visai eilei (CPU apkrova). Bendra juosta — laikas
-  nuo serijos pradžios (iš eilės baigtos transkripcijos) / (praėjęs + likęs). `skip_current()` — nužudo vykdomo darbo
+  nuo serijos pradžios (iš eilės baigtos transkripcijos) / (praėjęs + likęs). GREITAS KELIAS — `queue_busy()`: jei
+  niekas nelaiko `transcribe.lock` (flock LOCK_NB patikra, neperimant), `/proc` neskenuojamas (ikona klausia kas 2 s;
+  ikonos cgroup per parą suvartodavo ~1 val. CPU — kartu su langu). Ikonos būsena 🟡 — iš to paties, be `pgrep`.
+  `skip_current()` — nužudo vykdomo darbo
   ASR / ffmpeg (bash baigia pats: „garsas paliktas"; laikini `diktatura-asr-<pid>-*` išvalomi), `stop_all()` — dar
   naktinį ciklą ir laukiančius (bash PIRMA, tada jo `flock` — kitaip bash eitų toliau be užrakto). ASR serverio darbo
   nutraukti negalima (mygtukas pilkas). ASR moduliai SIGTERM verčia `SystemExit` (sutvarko laikinus failus).
@@ -194,7 +199,8 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
     (`diktatura.annotations`, `<duomenys>/annotations.json`), 🎓 priskirti vardą `Kolega?nezN`, ✎ Kas kalbėjo?
     (pataisyti kalbėtoją + išmokti balsą fone — `speakers.teach`, komanda `text_page.teach_cmd`). 📊 statistika
     (`sessions.speaker_stats`; „↺ Nunulinti" — `diktatura.stats`: skaičiuoja tik eilutes po įsiminto laiko, nieko
-    netrina), 💾 eksportas (.txt/.md).
+    netrina), 💾 eksportas (.txt / .md / .srt — subtitrai: eilutė iki kitos eilutės laiko, ≤ 30 s; viso matomo teksto
+    ar vienos sesijos — dešinio klik 📋 / 💾).
     🌊 **Banga** (`WAVEFORM`, „🌊 Banga"; `ui.waveform_view.WaveformView` — DrawingArea + cairo, be numpy): naujausios
     sesijos, o spragtelėjus eilutę / grojant — tos (pažymėta; „⤓ Naujausia" / „Sekti naujus" — atgal). Stereo — dvi
     juostos (Tu / kolegos), kolegų — tuo metu kalbančio spalva (`segment_color`), viršuje eilučių žymės, pasirinkta
@@ -255,7 +261,16 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
 - `make doctor` (`diktatura.doctor`, tik skaito): įrankiai, garsas, `.venv`, GTK/AppIndicator, modeliai (+SHA-256),
   nustatymai, servisų failai vs šablonai, režimas/ikona/naktinis, hooks, RAM/diskas → ✓/⚠/✗ + patarimas.
 - `diktatura.services` (stdlib): systemd --user vienoje vietoje (režimas vox/slack/off, timer'iai, unit'ų būklė,
-  `install_units()` kaip `make install-units`, `spawn_detached()` — ilgi darbai iš lango per `systemd-run --user`).
+  `install_units()` kaip `make install-units`, `spawn_detached()` — ilgi darbai iš lango per `systemd-run --user`,
+  `stale_units()` — veikiantys servisai, paleisti anksčiau nei pakeistas jų kodas (`RUNNING_CODE`: kurie failai kurį
+  servisą veikia; `make stale`, `make status`, `doctor` → „make restart-all"). Po `git pull` seni procesai vykdo seną
+  kodą tol, kol neperkrauti — anksčiau tai pastebėdavai tik iš to, kad naujovės „neveikia".
+- **Balsų atsarginė kopija** (`diktatura.backup`, stdlib): `speakers/*.json` + `pending/` → `<duomenys>/backups/
+  voices-<data>.tar.gz` (laikoma 10; tą pačią sekundę — `-2`, rikiuojama pagal mtime). `make backup-voices` /
+  `backups` / `restore-voices [F=]` (prieš atkūrimą — dabartinių kopija), Nustatymų mygtukas, ir AUTOMATIŠKAI
+  `reset.run([VOICES])` pradžioje. Įrašų kopijos nedarom — juos galima transkribuoti iš naujo, balsų — ne.
+- **CI:** `.github/workflows/test.yml` — Ubuntu 22.04, `make hooks setup models fixtures`, `make test`,
+  `make test-privacy` kiekvienam push / PR (be Ąžuolo — `test-full` lieka vietinis).
   Testams `DIKTATURA_SYSTEMCTL` / `DIKTATURA_SYSTEMD_DIR`.
 - **Sekami aplankai** (`diktatura.sources`, stdlib; `make sources`): `sources.json` — id (slug), pavadinimas, kelias,
   įjungtas, poaplankiai, `since` (senesni failai ignoruojami). Garso failai (m4a, mp3, wav, ogg, opus, flac, aac, amr,

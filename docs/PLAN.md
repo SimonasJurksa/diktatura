@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅ → 14 ✅**
 
 ---
 
@@ -449,6 +449,23 @@ nustatymus (iškart / naktį), tekstus laikyti atskirai — Tekste sub-tab'ai pa
 
 ---
 
+## Etapas 14 — „Tobulinam viską iki galo" ✅ (2026-10-19)
+
+Savininkas: „tai tobulinam dabar viską ką galim iki galo" (iš mano pasiūlytų 7 punktų; LLM / Q6 — ne).
+- **0. Ikonos CPU** (rasta darant: `journalctl` — tray cgroup 1 val. 22 min CPU per parą): `progress.queue_busy()`
+  greitas kelias be `/proc` skenavimo, tray be `pgrep`. Q20.
+- **1. Pasenęs kodas** — `services.stale_units()`, `make stale` / `restart-all`, `doctor` „Kodo versija", `make status`.
+- **2. CI** — GitHub Actions `make test` + `test-privacy` (Ubuntu 22.04). Ženkliukas README.
+- **3. Sekamų aplankų dekodavimo kešas — NEDARYTA:** ffmpeg dekoduoja po kartą smailėms ir po kartą ASR (į laikiną
+  16 kHz wav, jau dabar); kešas sutaupytų vieną dekodavimą (2 val. m4a ≈ 20 s) už diske laikomą 230 MB wav — neverta.
+- **4. Eksportas** — `.srt`, 📋 kopijuoti / 💾 eksportuoti vieną sesiją (Z1).
+- **5. Balsų kopija** — `diktatura.backup`, automatinė prieš `VOICES` trynimą, Nustatymų mygtukas (B10–B13). Rasta ir
+  pataisyta: dvi kopijos tą pačią sekundę perrašydavo viena kitą; rikiavimas pagal vardą painiojo `-2` eilę.
+- **6. Prognozės paklaida** — `progress.prediction_error()` ⏳ pastaboje ir `make progress` (Q21). Tikra: ±27 %.
+- Testai: 389. Dokumentai atnaujinti.
+
+---
+
 ## ❓ Nauji klausimai (su mano rekomendacija)
 
 - ✅ **Q5 — Kuriuos Etapo 13 punktus daryti ir kokia tvarka?** Atsakyta (2026-10-15): visus, nuo bangų; „failo
@@ -762,6 +779,19 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | Y3–Y4 | sesijos iš visų šaltinių, filtrai, paieška (regex, kalbėtojas, clean) | teisinga tvarka ir skaičiai |
 | Y5–Y7 | MCP per tikrą stdio: initialize, tools/list, ping, kiekvienas įrankis, klaidos, blogas JSON | protokolas teisingas; klaida — isError, serveris dirba |
 | Y8  | „✨ Švarus" Tekste                                    | rodoma / eksportuojama švariai; Nustatymų pakeitimai pritaikomi; failai nepakeisti |
+
+### Z. Etapas 14 ✅ — `tests/test_backup.py` (B10–B13), Q20–Q21 (`tests/test_progress.py`), Z1 (`tests/ui/test_text_features.py`), stale — `tests/test_debug_doctor.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| B10 | kopija: turinys, aprašas, laikoma 10                  | speakers/*.json + pending; seniausios trinamos |
+| B11 | atkūrimas                                            | pakeičia dabartinius; prieš tai — jų kopija; tuščias archyvas — klaida |
+| B12 | CLI create / list / restore                           | pranešimai; nėra failo — 1; nežinoma — 2 |
+| B13 | reset VOICES                                          | kopija padaroma automatiškai; RECORDINGS — ne |
+| Q20 | eilė laisva / užimta                                  | be skenavimo (waiting_night vis tiek); užimta — skenuojama |
+| Q21 | paklaida iš istorijos                                 | be kalbos — nėra; tikslūs — < 15 %; lėtas paskutinis — > 50 % |
+| Z1  | .srt, vienos sesijos eksportas / kopijavimas, meniu   | laikai iki kitos eilutės; tik ta sesija; iškarpinė |
+| stale | servisai su senesniu kodu                           | ±1 s — ne; doctor WARN su komanda |
 
 ### N. 🔍 Nustatymų paieška ✅ — `tests/ui/test_settings_search_ui.py`
 

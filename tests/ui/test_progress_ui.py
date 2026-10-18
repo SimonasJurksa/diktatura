@@ -56,6 +56,9 @@ def test_q13_dialog_two_bars_queue_and_buttons(env, P, gtk):
         assert d.exp_queue.get_label() == "Eilėje (2)" and d.exp_queue.get_visible()
         assert d.b_skip.get_sensitive() and d.b_stop.get_sensitive() and not d.lbl_idle.get_visible()
         assert "7 transkripc." in d.note.get_text()
+        d.error_fn = lambda: (0.18, 5)
+        d.fill(snap)
+        assert "7 transkripc.; ankstesnių 5 prognozių paklaida ±18 %" in d.note.get_text()
     finally:
         d.dlg.destroy()
 

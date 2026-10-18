@@ -97,6 +97,54 @@ def spawn_detached(cmd: list, name: str = "darbas", env: dict = None) -> None:
                          env={**os.environ, **extra}, cwd=str(paths.REPO))
 
 
+RUNNING_CODE = {TRAY: ("diktatura/ui", "diktatura/paths.py", "diktatura/config.py", "diktatura/progress.py",
+                       "diktatura/sources.py", "diktatura/services.py", "diktatura/speakers/store.py"),
+                RECORDERS["vox"]: ("diktatura/audio/vox.py", "diktatura/pause.py", "diktatura/config.py", "diktatura/paths.py"),
+                RECORDERS["slack"]: ("bin/autorecord.sh", "bin/common.sh"),
+                ASR: ("diktatura/asr", "diktatura/speakers", "diktatura/audio", "diktatura/progress.py")}
+RESTART_CMD = {TRAY: "make tray-restart", RECORDERS["vox"]: "make restart", RECORDERS["slack"]: "make restart",
+               ASR: "make asr-server-on"}
+
+
+def code_mtime(parts) -> float:
+    """Naujausias kodo failo keitimo laikas (katalogas — rekursyviai .py / .sh)."""
+    newest = 0.0
+    for part in parts:
+        p = paths.REPO / part
+        files = [f for f in p.rglob("*") if f.suffix in (".py", ".sh")] if p.is_dir() else [p]
+        for f in files:
+            try:
+                newest = max(newest, f.stat().st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
+def unit_started(unit: str):
+    """Kada servisas paleistas (s nuo epochos) — iš jo pagrindinio proceso; neveikia / nežinoma -> None."""
+    r = systemctl("show", "-p", "MainPID", "--value", unit)
+    pid = r.stdout.strip() if r.returncode == 0 else ""
+    if not pid.isdigit() or int(pid) <= 0:
+        return None
+    from diktatura import progress
+    p = progress.scan_procs().get(int(pid))
+    return p.start if p else None
+
+
+def stale_units(started=None, code=None) -> list:
+    """[(unit, komanda)] — veikiantys servisai, paleisti ANKSČIAU nei paskutinis jų kodo pakeitimas (seną kodą
+    vykdo tol, kol neperkrauti). started / code — testams: {unit: laikas}."""
+    out = []
+    for unit, parts in RUNNING_CODE.items():
+        t = (started or {}).get(unit) if started is not None else unit_started(unit)
+        if t is None:
+            continue
+        c = (code or {}).get(unit) if code is not None else code_mtime(parts)
+        if c and c > t + 1:
+            out.append((unit, RESTART_CMD[unit]))
+    return out
+
+
 def units_dir() -> Path:
     return Path(os.environ.get("DIKTATURA_SYSTEMD_DIR") or Path.home() / ".config" / "systemd" / "user")
 

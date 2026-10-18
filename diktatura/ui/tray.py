@@ -23,11 +23,6 @@ PULSE_MS = 500             # kadras (pilna/blanki) — pilnas ciklas ~1 s
 POLL_SEC = 2
 
 
-def running(pattern: str) -> bool:
-    return subprocess.run(["pgrep", "-f", pattern],
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-
-
 def compute_state(recording: bool, processing: bool) -> str:
     """Gryna būsenos logika: įrašymas svarbiau už apdorojimą."""
     if recording:
@@ -46,11 +41,11 @@ def training_label(pending: int) -> str:
     return f"🎓 Apmokymai paruošti ({pending})"
 
 
-def current_state() -> str:
-    return compute_state(
-        paths.STATE_RECORDING.exists(),
-        running(r"diktatura\.asr\.transcribe") or running(r"ffmpeg.*libmp3lame"),
-    )
+def current_state(snap=None) -> str:
+    """Būsena: rašoma — būsenos failas; apdorojama — transkripcijos eilė užimta (progress.queue_busy: ta pati
+    informacija kaip pgrep, bet be procesų paleidimo kas 2 s)."""
+    busy = snap.active if snap is not None else progress.queue_busy()
+    return compute_state(paths.STATE_RECORDING.exists(), busy)
 
 
 def open_app(page: str) -> None:
@@ -139,7 +134,11 @@ class Tray:
             self.shown_icon = name
 
     def update(self):
-        self.state = self.state_fn()
+        try:
+            snap = self.progress_fn()
+        except Exception:                        # eiga — tik informacija; ikona nelūžta
+            snap = None
+        self.state = self.state_fn(snap) if self.state_fn is current_state else self.state_fn()
         self.pending = self.pending_fn()
         if not self.pending:
             self.phase = 0
@@ -149,10 +148,7 @@ class Tray:
         self.it_mode.set_label(f"Režimas: {services.MODE_LABELS[self.mode_fn()].split(' — ')[0]}")
         self.it_training.set_label(training_label(self.pending))
         self.it_training.set_visible(bool(self.pending))
-        try:
-            prog = progress_label(self.progress_fn())
-        except Exception:                        # eiga — tik informacija; ikona nelūžta
-            prog = ""
+        prog = progress_label(snap) if snap is not None else ""
         self.it_progress.set_label(prog or "⏳")
         self.it_progress.set_visible(bool(prog))
         return True

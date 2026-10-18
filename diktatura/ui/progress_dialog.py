@@ -23,6 +23,8 @@ class ProgressDialog:
         self.skip_fn = skip_fn or progress.skip_current
         self.stop_fn = stop_fn or progress.stop_all
         self.interval_ms = interval_ms
+        self.error_fn = self._cached_error
+        self._err = None
         self.snap = None
         self.message = ""
         self._timer = None
@@ -84,6 +86,15 @@ class ProgressDialog:
         for w in (self.lbl_idle, self.cur_box, self.tot_box, self.exp_queue, self.lbl_msg, self.note):
             box.pack_start(w, w is self.exp_queue, w is self.exp_queue, 0)
 
+    def _cached_error(self):
+        """Paklaida iš istorijos — skaičiuojama kartą per langelio gyvavimą (istorija keičiasi tik baigus failą)."""
+        if self._err is None:
+            try:
+                self._err = progress.prediction_error()
+            except Exception:                          # tik informacija
+                self._err = (None, 0)
+        return self._err
+
     # ── vaizdas ──
     def fill(self, snap) -> None:
         self.snap = snap
@@ -134,9 +145,11 @@ class ProgressDialog:
                                      "Nutraukti dabartinį failą — eilė tęsiasi; failas liks be teksto (naktinis 01:30)")
         self.b_stop.set_sensitive(snap.active)
         n_hist = snap.rates.get("n", 0) if snap.rates else 0
+        err = progress.fmt_error(*self.error_fn()) if n_hist else ""
         self.note.set_text(
             ("Prognozė — pagal tai, kiek šis kompiuteris užtruko anksčiau "
-             + (f"({n_hist} transkripc.)" if n_hist else "(istorijos dar nėra — kol kas apytikriai)")
+             + (f"({n_hist} transkripc.{'; ' + err if err else ''})" if n_hist
+                else "(istorijos dar nėra — kol kas apytikriai)")
              + " ir pagal tikrą dabartinį greitį; kai CPU apkrautas kitų programų, laikas ilgėja. Sustabdyti failai "
              "lieka be teksto — juos paims naktinis (01:30) arba make transcribe-pending."))
         self.lbl_msg.set_text(self.message)

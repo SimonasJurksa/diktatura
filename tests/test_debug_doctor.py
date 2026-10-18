@@ -178,3 +178,20 @@ def test_set_recorder_mode_reports_failure(env, fake_systemd):
 def test_timer_toggle(env, fake_systemd):
     assert services.set_timer(True)[0] and services.is_enabled(services.TIMER)
     assert services.set_timer(False)[0] and not services.is_enabled(services.TIMER)
+
+
+# ── pasenęs kodas veikiančiuose servisuose ──
+
+def test_stale_units_pure_and_doctor(env, monkeypatch):
+    tray, vox = services.TRAY, services.RECORDERS["vox"]
+    assert services.stale_units(started={}, code={}) == []
+    assert services.stale_units(started={tray: 100.0, vox: 100.0}, code={tray: 50.0, vox: 500.0}) == \
+        [(vox, "make restart")]
+    assert services.stale_units(started={tray: 100.0}, code={tray: 100.5}) == []          # ±1 s — ne
+    assert services.code_mtime(("diktatura/ui", "bin/common.sh")) > 1.7e9
+    monkeypatch.setattr(services, "stale_units", lambda: [(tray, "make tray-restart")])
+    [r] = doctor.check_code_fresh()
+    assert r.status == doctor.WARN and "diktatura-tray" in r.title and r.fix == "make tray-restart"
+    monkeypatch.setattr(services, "stale_units", lambda: [])
+    assert doctor.check_code_fresh()[0].status == doctor.OK
+    assert services.unit_started("diktatura-nera.service") is None                        # netikras systemctl

@@ -184,6 +184,14 @@ def check_services(cfg: dict) -> list:
     return out
 
 
+def check_code_fresh() -> list:
+    """Veikiantys servisai su senesniu kodu nei repo (po git pull / pakeitimų — kol neperkrauti, nauji dalykai neveikia)."""
+    stale = services.stale_units()
+    if not stale:
+        return [R(OK, "veikiantys servisai — su dabartiniu kodu")]
+    return [R(WARN, f"{u} paleistas su senesniu kodu nei repo — nauji pakeitimai dar neveikia", cmd) for u, cmd in stale]
+
+
 def check_sources(cfg: dict) -> list:
     """Sekami aplankai: ar pasiekiami, kiek laukia, ar „iškart" režimui įjungtas timer'is."""
     from diktatura import sources
@@ -279,6 +287,7 @@ def run_all() -> list:
         ("Nustatymai", check_config()),
         ("Servisai", check_services(cfg)),
         ("Sekami aplankai", check_sources(cfg)),
+        ("Kodo versija", check_code_fresh()),
         ("Privatumas (git)", check_git()),
         ("Resursai", check_resources(mem_available_gb(), disk_free_gb(paths.DATA_DIR), cfg["MODEL"])),
         ("Vyksta dabar", check_runtime()),

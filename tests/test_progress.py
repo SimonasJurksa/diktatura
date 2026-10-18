@@ -544,3 +544,38 @@ def test_q19_peaks_file_from_progress_or_next_to_audio(env, P, monkeypatch):
     assert P.peaks_file(j) == Path("/kitur/Įrašas 7.m4a.peaks")
     monkeypatch.setenv("DIKTATURA_PEAKS", "/out/x.peaks")                  # transcribe-file.sh perduoda Reporter'iui
     assert P.Reporter(env.recordings / "x.wav", "named").data["peaks"] == "/out/x.peaks"
+
+
+# ── Q20: greitas kelias — be /proc skenavimo, kai eilė laisva ──
+
+def test_q20_snapshot_fast_path_when_lock_free(env, P, monkeypatch, jobs, fake_asr):
+    scans = []
+    orig = P.scan_procs
+    monkeypatch.setattr(P, "scan_procs", lambda: scans.append(1) or orig())
+    assert not P.queue_busy()
+    s = P.snapshot()
+    assert not s.active and scans == [] and s.rates["n"] == 0                   # niekas neskenuota
+    make_wav(env, "vox_20261019_100000.wav")
+    assert [f.name for f in P.snapshot().waiting_night] == ["vox_20261019_100000.wav"]
+    jobs("vox_20261019_100100.wav", sleep="5")
+    assert wait_for(P.queue_busy, 5)
+    s = P.snapshot()
+    assert s.running is not None and scans                                       # užimta — skenuojama
+
+
+# ── Q21: prognozės paklaida iš istorijos ──
+
+def test_q21_prediction_error(P):
+    def rec(audio, speech, asr, prep=0.03):
+        return {"kind": "named", "model": "azuolas-ct2", "audio": audio, "speech": speech,
+                "phases": {"prep": prep * audio, "vad": 0.02 * audio * 2, "load": 6.0, "asr": asr, "names": 0.05 * speech[1]}}
+    assert P.prediction_error([]) == (None, 0)
+    silent = [rec(10, [0.0, 0.0], 0.0) for _ in range(20)]                      # be kalbos — neįtraukiama
+    assert P.prediction_error(silent) == (None, 0)
+    steady = [rec(100, [40.0, 40.0], 120.0) for _ in range(8)]                 # RTF 1.5 — kaip numatyta
+    err, n = P.prediction_error(silent + steady)
+    assert n == 8 and err < 0.15                                                # ankstesni įrašai nuspėja tiksliai
+    slow = steady + [rec(100, [40.0, 40.0], 360.0)]                             # paskutinis 3× lėtesnis
+    err2, _ = P.prediction_error(slow, last=1)
+    assert err2 > 0.5
+    assert P.fmt_error(0.274, 10) == "ankstesnių 10 prognozių paklaida ±27 %" and P.fmt_error(None, 0) == ""

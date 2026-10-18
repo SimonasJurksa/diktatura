@@ -12,7 +12,8 @@
   eilutė pervadinama, o jos balsas išmokstamas tam žmogui / tau — diktatura.speakers.teach, fone per .venv).
   📊 Statistika (kas kiek kalbėjo), ⏳ Transkripcija (eiga ir prognozė — ui.progress_dialog; mygtuko užrašas kas 2 s
   rodo „43 % · liko ~1 val. · eilėje 4"),
-  💾 Eksportuoti (matomas tekstas -> .txt / .md). Tekstą galima redaguoti prieš kopijuojant (failai nekeičiami).
+  💾 Eksportuoti (matomas tekstas -> .txt / .md / .srt subtitrai); dešiniu klik — 📋 kopijuoti / 💾 eksportuoti vieną
+  sesiją. Tekstą galima redaguoti prieš kopijuojant (failai nekeičiami).
 - ✨ Švarus (CLEAN_VIEW, mygtukas „✨ Švarus"): rodoma be užpildų („ee", „mhm", FILLER_WORDS) ir pasikartojimų
   (diktatura.fillers); eilutės iš vien užpildų slepiamos. Paieška ir eksportas — kaip rodoma; failai nekeičiami.
 - 🔁 Transkribuoti iš naujo (dešinys klik): sesija iš naujo dabartiniu modeliu ir balsais (bin/transcribe-file.sh,
@@ -747,6 +748,8 @@ class TextPage(Gtk.Box):
             lambda: self.on_retranscribe(ln.session), can)
         if self.prev_text(ln.session).exists():
             add("↩ Grąžinti ankstesnę transkripciją", lambda: self.restore_previous(ln.session))
+        add("📋 Kopijuoti šią sesiją", lambda: self.copy_session(ln.session))
+        add("💾 Eksportuoti šią sesiją… (.txt / .md / .srt)", lambda: self.on_export(ln.session))
         return items
 
     def _speaker_menu(self, ln, sub, items) -> None:
@@ -1208,10 +1211,32 @@ class TextPage(Gtk.Box):
             fill()
         dlg.destroy()
 
-    def export_text(self, fmt: str = "txt") -> str:
+    @staticmethod
+    def srt_time(sec: float) -> str:
+        h, rem = divmod(int(sec), 3600)
+        m, s = divmod(rem, 60)
+        return f"{h:02d}:{m:02d}:{s:02d},{int((sec - int(sec)) * 1000):03d}"
+
+    def export_srt(self, lines) -> str:
+        """Subtitrai (.srt): eilutė skamba iki kitos eilutės su laiku (ne ilgiau 30 s); be laiko — praleidžiama."""
+        out, n = [], 0
+        for ln in lines:
+            if ln.seconds is None:
+                continue
+            a, b = line_span(ln, ln.session.lines)
+            n += 1
+            who = f"{ln.speaker}: " if ln.speaker else ""
+            out.append(f"{n}\n{self.srt_time(a)} --> {self.srt_time(b)}\n{who}{self.display_text(ln)}\n")
+        return "\n".join(out) + ("\n" if out else "")
+
+    def export_text(self, fmt: str = "txt", lines=None) -> str:
+        """Matomas tekstas (arba nurodytos eilutės — viena sesija) kaip txt / md / srt."""
+        lines = self.visible_lines() if lines is None else lines
+        if fmt == "srt":
+            return self.export_srt(lines)
         out = []
         cur = None
-        for ln in self.visible_lines():
+        for ln in lines:
             if ln.session is not cur:
                 cur = ln.session
                 head = f"{cur.when:%Y-%m-%d %H:%M} · {cur.source or '-'} · {sessions.base_name(cur.path.name)}"
@@ -1226,20 +1251,40 @@ class TextPage(Gtk.Box):
                 out.append(pre + (f"[{ln.ts}] " if ln.ts else "") + (f"{ln.speaker}: " if ln.speaker else "") + text)
         return "\n".join(out).lstrip("\n") + "\n"
 
-    def export_to(self, path) -> Path:
+    @staticmethod
+    def export_format(path) -> str:
+        return {".md": "md", ".srt": "srt"}.get(Path(path).suffix.lower(), "txt")
+
+    def export_to(self, path, session=None) -> Path:
+        """Į failą: plėtinys lemia formatą (.txt / .md / .srt); session — tik tos sesijos eilutės."""
         path = Path(path)
-        path.write_text(self.export_text("md" if path.suffix.lower() == ".md" else "txt"), encoding="utf-8")
+        lines = None if session is None else [ln for ln in session.lines if self.visible(ln)]
+        path.write_text(self.export_text(self.export_format(path), lines), encoding="utf-8")
         self.status.set_text(f"✓ Eksportuota: {path}")
         return path
 
-    def on_export(self) -> None:
-        dlg = Gtk.FileChooserNative.new("Eksportuoti tekstą", self.get_toplevel() if self.win else None,
+    def session_text(self, session, fmt="txt") -> str:
+        return self.export_text(fmt, [ln for ln in session.lines if self.visible(ln)])
+
+    def copy_session(self, session) -> None:
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(self.session_text(session), -1)
+        self.status.set_text(f"✓ Nukopijuota sesija {sessions.base_name(session.path.name)}")
+
+    def on_export(self, session=None) -> None:
+        name = sessions.base_name(session.path.name) if session is not None else f"diktatura_{date.today():%Y%m%d}"
+        dlg = Gtk.FileChooserNative.new("Eksportuoti sesiją" if session is not None else "Eksportuoti tekstą",
+                                        self.get_toplevel() if self.win else None,
                                         Gtk.FileChooserAction.SAVE, "Išsaugoti", "Atšaukti")
         dlg.set_do_overwrite_confirmation(True)
-        dlg.set_current_name(f"diktatura_{date.today():%Y%m%d}.md")
+        dlg.set_current_name(f"{name}.md")
+        for label_, pat in (("Markdown (.md)", "*.md"), ("Tekstas (.txt)", "*.txt"), ("Subtitrai (.srt)", "*.srt")):
+            f = Gtk.FileFilter()
+            f.set_name(label_)
+            f.add_pattern(pat)
+            dlg.add_filter(f)
         docs = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOCUMENTS)
         if docs:
             dlg.set_current_folder(docs)
         if dlg.run() == Gtk.ResponseType.ACCEPT:
-            self.export_to(dlg.get_filename())
+            self.export_to(dlg.get_filename(), session)
         dlg.destroy()

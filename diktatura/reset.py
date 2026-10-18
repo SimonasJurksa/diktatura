@@ -8,6 +8,7 @@ Kategorijos (renkasi vartotojas):
                nekartojami.
   VOICES     — vardų atpažinimas: registruoti balsai (enroll.json), tavo balsas (owner.json), „ne žmogus" (ignored.json),
                seni balsų archyvai (speakers/legacy-*).
+Prieš trinant VOICES — automatinė kopija (diktatura.backup -> <duomenys>/backups/).
 Niekada netrinama: nustatymai, modeliai, logai, speakers/model.json ir assigned.json, DABAR rašomas įrašas ir DABAR
 transkribuojamas failas (su jų tekstais) — kitaip transkripcija po valymo „atgaivintų" seną tekstą.
 """
@@ -136,6 +137,12 @@ def run(categories, busy=None) -> dict:
         raise ValueError(f"nežinomos kategorijos: {sorted(unknown)}")
     p = plan(busy)
     deleted, errors = {}, []
+    if VOICES in categories:                       # balsai — vienintelis sunkiai atkuriamas dalykas: kopija prieš trinant
+        from diktatura import backup
+        try:
+            backup.create("prieš „Ištrinti įrašus ir tekstus“ (vardų atpažinimas)")
+        except OSError as e:
+            errors.append(f"atsarginė balsų kopija nepavyko: {e}")
     for cat in categories:
         for t in p[cat].targets:
             try:

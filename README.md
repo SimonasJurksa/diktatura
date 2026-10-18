@@ -1,5 +1,7 @@
 # Diktatūra 🎙️→📝
 
+[![test](https://github.com/SimonasJurksa/diktatura/actions/workflows/test.yml/badge.svg)](https://github.com/SimonasJurksa/diktatura/actions/workflows/test.yml)
+
 **Nemokamas, lokalus (privatus) balso-į-tekstą įrankis Linux vartotojams.**
 Automatiškai įrašo Slack skambučius ar diktavimą, transkribuoja **lietuviškai**, atpažįsta
 kalbėtojus **vardais** — ir viskas vyksta tavo kompiuteryje, niekur nesiunčiama.
@@ -77,7 +79,8 @@ indikatorius, kompaktiška tema: **[docs/GALLERY.md](docs/GALLERY.md)**.
   ausinėmis kompiuterio lizde), jo kopija prieš transkripciją atimama (sistemos garso kanalas — tikslus etalonas).
 - 📚 **Kaupia tekstą** — visos transkripcijos vienoje vietoje, gyvai pildosi; paieška (ir regex), filtrai pagal
   kalbėtoją ir laikotarpį (iki viso archyvo), ⭐ žymės ir ☐ užduotys, **▶ grojimas nuo eilutės**,
-  📊 statistika (kas kiek kalbėjo; galima nunulinti), 💾 eksportas į .txt / .md.
+  📊 statistika (kas kiek kalbėjo; galima nunulinti), 💾 eksportas į .txt / .md / .srt (subtitrai) — viso matomo teksto
+  arba vienos sesijos (dešinys klik: 📋 kopijuoti / 💾 eksportuoti).
 - 🌊 **Garso banga** — Tekste (pasirinktos sesijos: tu / kolegos, kalbėtojų spalvos, spragtelėk — groja nuo ten) ir
   ⏳ eigos langelyje (apdorota dalis ryški, likusi — išblukusi).
 - 💊 **Įrašymo indikatorius** ekrano kampe — kol įrašoma: gyva banga ir laikmatis („ar mane girdi?"); po to —
@@ -100,9 +103,13 @@ indikatorius, kompaktiška tema: **[docs/GALLERY.md](docs/GALLERY.md)**.
   trynimą parodoma, kiek ir ko bus ištrinta. Pilname diske įrašymas nebelūžta — palaukia, kol atsiras vietos.
 - ⏳ **Transkripcijos eiga** (Tekstas → „⏳ Transkripcija" arba ikonos meniu): kaip Midnight Commander kopijuojant — juosta
   dabartiniam failui (etapas, kiek garso apdorota) ir visai eilei, kiek liko ir kada baigs. Prognozė mokosi iš šio
-  kompiuterio greičio ir prisitaiko gyvai (CPU apkrautas → ilgiau). Galima „⏭ Praleisti šį" ar „⏹ Sustabdyti viską"
+  kompiuterio greičio ir prisitaiko gyvai (CPU apkrautas → ilgiau); pastaboje — kiek ankstesnės prognozės skyrėsi
+  nuo tikrovės (pvz. „±27 %"). Galima „⏭ Praleisti šį" ar „⏹ Sustabdyti viską"
   — tokie failai lieka naktiniam transkribavimui. Terminale — `make progress`.
-- 🩺 `make doctor` — savitikra su patarimais; debug žurnalas problemoms gaudyti.
+- 💾 **Balsų atsarginė kopija** — registruoti balsai („pirštų atspaudai") yra vienintelis dalykas, kurio
+  neperdarysi: `make backup-voices` / Nustatymų mygtukas, automatiškai prieš jų trynimą; `make restore-voices`.
+- 🩺 `make doctor` — savitikra su patarimais (ir ar veikiantys servisai nepaleisti su senesniu kodu — po `git pull`
+  `make restart-all`); debug žurnalas problemoms gaudyti. Kiekvienas push tikrinamas GitHub Actions (`make test`).
 
 ## Privatumas
 
@@ -144,6 +151,8 @@ make immediate | defer    # transkribuoti iškart / naktį (01:30)
 make transcribe-pending   # sutranskribuoti viską dabar
 make progress             # ⏳ kas transkribuojama, kiek liko (failui ir visai eilei)
 make cleanup DRY=1        # 🧹 ką ištrintų seno garso trynimas (be DRY — ištrinti; tekstai lieka)
+make backup-voices        # 💾 balsų atsarginė kopija (make backups — sąrašas; make restore-voices — atkurti)
+make restart-all          # po git pull: perkrauti visus veikiančius servisus (make stale — kuriems reikia)
 make sources              # 📱 sekami aplankai: kiek failų, tekstų, kiek laukia (pridėti — Nustatymuose)
 make mcp                  # 🔌 kaip prijungti tekstus prie AI kliento (tik skaitymas; pats neregistruoja)
 make text                 # langas: 📄 Tekstas   (make training — 🎓 Apmokymai, make settings — ⚙ Nustatymai)

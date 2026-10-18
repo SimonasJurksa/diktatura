@@ -24,7 +24,7 @@ import unicodedata
 from html import escape
 from pathlib import Path
 
-from diktatura import cleanup, config, reset, services, sources
+from diktatura import backup, cleanup, config, reset, services, sources
 from diktatura.ui.gtk import Gdk, Gtk, Pango, button, label
 
 MODES = ("vox", "slack", "off")
@@ -283,7 +283,12 @@ class SettingsPage(Gtk.Box):
                                    "Grąžinti visas reikšmes į numatytąsias (prieš tai paklausiama)")
         self.btn_wipe = button("🗑 Ištrinti įrašus ir tekstus…", self.on_wipe_clicked,
                                "Pradėti kaupti iš naujo (prieš tai paklausiama, ką trinti)", css="destructive-action")
+        self.btn_backup = button("💾 Balsų atsarginė kopija", self.on_backup_voices,
+                                 "Registruoti balsai ir laukiantys vardo — į archyvą (atkurti: make restore-voices)")
         rows = ((self.btn_defaults, "Visi aukščiau esantys nustatymai grįžta į numatytuosius. Įrašymo režimas nesikeičia."),
+                (self.btn_backup, "Balsų „pirštų atspaudai\" — vienintelis dalykas, kurio neperdarysi (įrašus galima "
+                                  "transkribuoti iš naujo). Kopija — <duomenys>/backups/, laikoma 10 naujausių; prieš "
+                                  "balsų trynimą daroma automatiškai."),
                 (self.btn_wipe, "Ištrinami įrašai (garsas) ir tekstai — kaupimas prasideda iš naujo. Vardų atpažinimas "
                                 "(registruoti balsai) lieka, nebent pažymėsi ir jį."))
         for i, (b, help_) in enumerate(rows):
@@ -636,6 +641,16 @@ class SettingsPage(Gtk.Box):
         if self.win is not None:
             self.win.apply_theme()
         self.set_msg("✓ Atkurti numatytieji nustatymai", "dk-ok")
+
+    def on_backup_voices(self) -> bool:
+        try:
+            out = backup.create("Nustatymai")
+        except OSError as e:
+            self.set_msg(f"✗ kopija nepavyko: {e}", "dk-error")
+            return False
+        d = backup.describe(out)
+        self.set_msg(f"✓ Balsų kopija: {out} (balsų {d['voices']}, laukiančių vardo {d['pending']})", "dk-ok")
+        return True
 
     def wipe_dialog(self):
         """-> (dialogas, {kategorija: Gtk.CheckButton}). Numatytai pažymėta tik „įrašai ir tekstai"."""

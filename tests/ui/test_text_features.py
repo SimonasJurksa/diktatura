@@ -402,3 +402,25 @@ def test_y8_clean_view_toggle_export_and_settings(win, demo):
     assert not tp.btn_clean.get_active() and "ee, nu, aš aš manau" in tp.text()
     ln = next(x for x in tp.visible_lines() if x.text.startswith("ee, nu"))
     assert ln.text == "ee, nu, aš aš manau, kad gerai"                         # failas / eilutė nepakeisti
+
+
+# ── Z1: eksportas .srt, vienos sesijos kopijavimas / eksportas ──
+
+def test_z1_srt_and_single_session_export(win, demo, tmp_path):
+    tp = win.text
+    s = next(ln.session for ln in tp.visible_lines() if ln.text == "po diegimo")
+    srt = tp.session_text(s, "srt")
+    assert srt.startswith("1\n00:00:01,000 --> 00:00:05,000\nOna: rytoj diegimas į serverį\n")
+    assert "4\n00:00:26,000 --> 00:00:31,000\nOna: po diegimo\n" in srt          # paskutinė — +5 s
+    assert tp.export_text("srt").count("-->") == 5                              # visos matomos (vakar — 1)
+    out = tp.export_to(tmp_path / "x.srt", s)
+    assert out.read_text() == srt and tp.export_format("a.MD") == "md" and tp.export_format("a.bin") == "txt"
+    one = tp.export_to(tmp_path / "s.md", s).read_text()
+    assert one.count("## ") == 1 and "vakarykštė" not in one
+    tp.copy_session(s)
+    from diktatura.ui.gtk import Gdk, Gtk
+    assert "po diegimo" in Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_text()
+    assert "Nukopijuota sesija" in tp.status.get_text()
+    ln = next(x for x in tp.visible_lines() if x.text == "po diegimo")
+    labels = [m.get_label() for m in tp.menu_items(ln) if hasattr(m, "get_label")]
+    assert "📋 Kopijuoti šią sesiją" in labels and any(x.startswith("💾 Eksportuoti šią sesiją") for x in labels)
