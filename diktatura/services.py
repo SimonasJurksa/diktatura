@@ -190,3 +190,93 @@ def units_status() -> dict:
         else:
             out[u] = "ok" if f.read_text(encoding="utf-8") == render_unit(u) else "stale"
     return out
+
+
+# ── make off / make on: viską išjungti, kai trūksta resursų, ir grąžinti tai, kas buvo įjungta ──
+POWER_UNITS = (RECORDERS["vox"], RECORDERS["slack"], TIMER, SOURCES_TIMER, ASR, TRAY)
+POWER_LABELS = {RECORDERS["vox"]: "įrašymas VOX", RECORDERS["slack"]: "įrašymas Slack", TIMER: "naktinis 01:30",
+                SOURCES_TIMER: "sekami aplankai", ASR: "ASR serveris", TRAY: "ikona"}
+JOB_UNITS = ("diktatura-nightly.service", "diktatura-sources.service")   # vykstančios transkripcijos (cgroup)
+APP_ID = "lt.diktatura.Diktatura"                                        # = diktatura.ui.app.APP_ID (čia be gi)
+
+
+def power_file() -> Path:
+    return paths.STATE_DIR / "off.json"
+
+
+def power_state():
+    """Ką `make off` išjungė: {"units": [...], "at": "..."} arba None (neišjungta)."""
+    import json
+    try:
+        d = json.loads(power_file().read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) and isinstance(d.get("units"), list) else None
+    except (OSError, ValueError):
+        return None
+
+
+def close_window() -> bool:
+    """Uždaryti atidarytą langą (Gtk.Application „quit" veiksmas per D-Bus). Lango nėra — False."""
+    app_id = os.environ.get("DIKTATURA_APP_ID") or APP_ID
+    cmd = shlex.split(os.environ.get("DIKTATURA_GDBUS") or "gdbus") + [
+        "call", "--session", "--dest", app_id, "--object-path", "/" + app_id.replace(".", "/"),
+        "--method", "org.gtk.Actions.Activate", "quit", "[]", "{}"]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def power_off() -> tuple:
+    """Viską išjungti (ir po perkrovimo): įrašymą, naktinį, sekamus aplankus, ASR serverį, ikoną, langą ir vykstančias
+    transkripcijas (garsas lieka — tekstą padarys vėliau). Kas buvo įjungta — įsimenama `make on`. -> (ok, pranešimas)."""
+    import json
+    from datetime import datetime
+
+    from diktatura import progress
+    was = [u for u in POWER_UNITS if is_enabled(u) or is_active(u)]
+    if was:                                       # antras `make off` iš eilės neperrašo įsimintos būsenos tuščia
+        f = power_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"units": was, "at": datetime.now().isoformat(timespec="seconds")},
+                                ensure_ascii=False), encoding="utf-8")
+    lines = []
+    snap = progress.snapshot()
+    if snap.active:
+        lines.append(progress.stop_all(snap))
+    r = systemctl("disable", "--now", *POWER_UNITS)
+    systemctl("stop", *JOB_UNITS)
+    if close_window():
+        lines.append("langas uždarytas")
+    if r.returncode != 0:
+        return False, f"išjungti nepavyko: {(r.stderr or r.stdout).strip()}"
+    off = ", ".join(POWER_LABELS[u] for u in was) or "jau buvo išjungta"
+    return True, "\n".join([f"⏻ Diktatūra išjungta: {off}", *lines, "Įjungti atgal: make on"])
+
+
+def power_on() -> tuple:
+    """Grąžinti tai, ką išjungė `make off`. Be įsimintos būsenos — paleidžia tai, kas įjungta (enabled)."""
+    st = power_state()
+    units = [u for u in (st or {}).get("units", []) if u in POWER_UNITS] or [u for u in POWER_UNITS if is_enabled(u)]
+    if not units:
+        return False, "Nėra ką įjungti (make off nenaudotas, nė vienas servisas neįjungtas): " \
+                      "make mode-vox (arba mode-slack), make nightly-on, make tray-on"
+    r = systemctl("enable", "--now", *units)
+    if r.returncode != 0:
+        return False, f"įjungti nepavyko: {(r.stderr or r.stdout).strip()} (make install-units?)"
+    power_file().unlink(missing_ok=True)
+    return True, f"⏻ Diktatūra įjungta: {', '.join(POWER_LABELS[u] for u in units)}"
+
+
+def main(argv=None) -> int:
+    import sys
+    args = sys.argv[1:] if argv is None else argv
+    if args not in (["off"], ["on"]):
+        print("Naudojimas: python3 -m diktatura.services off|on", file=sys.stderr)
+        return 2
+    ok, msg = power_off() if args == ["off"] else power_on()
+    print(msg, file=sys.stdout if ok else sys.stderr)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

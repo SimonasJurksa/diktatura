@@ -144,6 +144,8 @@ Pašalinti servisus: `make uninstall` (duomenys lieka).
 
 ```bash
 make status               # kas vyksta: režimas, įrašai, RAM
+make off                  # ⏻ trūksta resursų? išjungti VISKĄ: įrašymą, transkripcijas, naktinį, ikoną, langą
+make on                   # ⏻ įjungti atgal tai, kas buvo įjungta (tas pats režimas, naktinis, ikona)
 make doctor               # savitikra: ar viskas sudiegta ir veikia (✓/⚠/✗ + ką daryti)
 make mode-slack           # 💬 Slack skambučių aptikimas
 make mode-vox             # 🎙️ balso aktyvumas (diktavimui, be Slack)

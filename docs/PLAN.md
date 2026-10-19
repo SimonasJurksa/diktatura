@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅ → 14 ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅ → 14 ✅ → 14.1 ✅**
 
 ---
 
@@ -464,6 +464,17 @@ Savininkas: „tai tobulinam dabar viską ką galim iki galo" (iš mano pasiūly
 - **6. Prognozės paklaida** — `progress.prediction_error()` ⏳ pastaboje ir `make progress` (Q21). Tikra: ±27 %.
 - Testai: 389. Dokumentai atnaujinti.
 
+## Etapas 14.1 — `make off` / `make on` ✅ (2026-10-20)
+
+Savininkas (naktinė transkripcija 01:30 suėmė ~325 % CPU ir 2.5 GB RAM): „kompas nebepaveža" → „pridėk make on ir make
+off … padėtų apsisaugoti jei jau visai striuka su resursais". Anksčiau reikėjo keturių komandų (`stop-transcribe mode-off
+nightly-off tray-off`), o `mode-off` pamiršdavo, ar buvo VOX, ar Slack.
+- `make off` — viską išjungia ir po perkrovimo: įrašymą, vykstančias transkripcijas (garsas lieka), naktinį, sekamus
+  aplankus, ASR serverį, ikoną, atidarytą langą (D-Bus `quit`). Kas buvo įjungta — `~/.local/state/diktatura/off.json`.
+- `make on` — grąžina būtent tai; `doctor` primena, kad išjungta. Testai PW1–PW5 + lango uždarymas per tikrą D-Bus.
+- Rasta darant: Q9 / Q10 testai lenktyniaudavo apkrautoje mašinoje (load ~7) — stabdydavo dar bangos žingsnyje, kol
+  ASR nepradėtas (kito vaiko pid, nėra trace). Dabar laukia netikro ASR pradžios; produkto klaidos nebuvo. Testai: 444.
+
 ---
 
 ## ❓ Nauji klausimai (su mano rekomendacija)
@@ -804,6 +815,17 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | `tests/test_misc_more.py` (MS1–MS6) | žymės (pasislinkusi eilutė, sugadintas failas), statistikos nunulinimas, pauzė, `bin/rec-toggle.sh` start / stop, VOX vartų ribos, config CLI klaidos |
 | `tests/ui/test_settings_more.py` (ST1–ST4) | kiekvieno tipo nustatymas pirmyn-atgal, išorinis pakeitimas matomas (bet neperrašo neišsaugoto), numatytųjų skirtumai, kopijos mygtukas |
 | Q9c (`tests/test_progress.py`) | „Praleisti" tarp žingsnių — žymė (rasta kartojant testus) |
+
+### PW. ⏻ `make off` / `make on` ✅ — `tests/test_power.py`, `tests/ui/test_main_window.py` (quit)
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| PW1 | off, antras off, on                                  | viskas disabled + langas uždarytas; būsena neperrašoma tuščia; on grąžina tik tai, kas buvo |
+| PW2 | Slack režimas + ASR serveris                         | po on — vėl Slack (ne VOX) ir ASR |
+| PW3 | on be įsimintos būsenos / sugadintas / svetimi unit'ai | paleidžia enabled; nieko — patarimas; svetimi ignoruojami |
+| PW4 | `make off` per Makefile, CLI, doctor                 | pranešimas; doctor WARN „make on" kol išjungta |
+| PW5 | off vykstant transkripcijai                          | nutraukiama, garsas lieka be teksto |
+| quit | `services.close_window()` per tikrą D-Bus            | langas užsidaro (0); lango nėra — False |
 
 ### N. 🔍 Nustatymų paieška ✅ — `tests/ui/test_settings_search_ui.py`
 

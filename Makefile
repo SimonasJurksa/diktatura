@@ -94,6 +94,10 @@ start: ## Paleisti įjungtą įrašymo režimą
 	@u=$$(for s in $(RECORDERS); do $(SC) is-enabled -q $$s 2>/dev/null && echo $$s; done | head -1); \
 	 test -n "$$u" || { echo "Nė vienas režimas neįjungtas: make mode-vox arba make mode-slack"; exit 1; }; \
 	 $(SC) start $$u && echo "✓ paleista: $$u"
+off: ## ⏻ Išjungti VISKĄ, kai trūksta resursų: įrašymą, transkripcijas, naktinį, ikoną, langą (ir po perkrovimo)
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.services off
+on: install-units ## ⏻ Įjungti atgal tai, ką išjungė make off (tas pats režimas, naktinis, ikona…)
+	@PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.services on
 stop: ## Laikinai sustabdyti įrašymą (po perkrovimo vėl įsijungs; visam — make mode-off)
 	@$(SC) stop $(RECORDERS) && echo "🛑 įrašymas sustabdytas"
 restart: ## Perkrauti įrašymo servisą (po kodo pakeitimų; nustatymams nereikia)
@@ -242,7 +246,7 @@ test-e2e: ## E2E: virtualus garsas (PulseAudio null-sink) + tikri daemon'ai (tav
 fixtures: ## Atsisiųsti LT kalbos testų klipus (Common Voice, CC0, ~220 KB; ne į repo)
 	@bash $(REPO)/tools/fetch_fixtures.sh
 
-.PHONY: help desktop speakers-migrate speakers-relabel doctor debug-on debug-off dlogs status recordings logs tlogs text settings training mode-vox mode-slack mode-off start stop restart rec-toggle \
+.PHONY: help desktop speakers-migrate speakers-relabel doctor debug-on debug-off dlogs status recordings logs tlogs text settings training mode-vox mode-slack mode-off off on start stop restart rec-toggle \
         config set config-edit config-reset auto-on auto-off immediate defer model-azuolas model-medium \
         asr-server-on asr-server-off \
         transcribe-pending transcribe progress cleanup sources mcp stop-transcribe nightly-on nightly-off nightly-now \

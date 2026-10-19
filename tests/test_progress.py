@@ -345,7 +345,8 @@ def test_q8_waiting_for_night_when_idle(env, P):
 
 def test_q9_skip_current_next_continues(env, P, jobs, fake_asr):
     jobs("vox_20261012_120000.wav", "vox_20261012_120100.wav", sleep="30")
-    assert wait_for(lambda: P.snapshot().running is not None and len(P.snapshot().queued) == 1, 10)
+    assert wait_for(lambda: fake_asr.exists() and P.snapshot().running is not None   # ASR jau vyksta (apkrautoje
+                    and len(P.snapshot().queued) == 1, 20)                    # mašinoje — ne bangos žingsnis)
     s = P.snapshot()
     victim = s.running
     assert wait_for(lambda: P.descendants(victim.pid, P.scan_procs()), 10, 0.01)   # tarp žingsnių vaiko gali nebūti
@@ -397,7 +398,8 @@ def test_q9_skip_during_waveform_step_stops_the_job(env, P, jobs, fake_asr):
 
 def test_q10_stop_all_running_queued_and_nightly(env, P, jobs, fake_asr):
     jobs("vox_20261012_130000.wav", "vox_20261012_130100.wav", "vox_20261012_130200.wav", sleep="30")
-    assert wait_for(lambda: P.snapshot().running is not None and len(P.snapshot().queued) == 2, 10)
+    assert wait_for(lambda: fake_asr.exists() and P.snapshot().running is not None
+                    and len(P.snapshot().queued) == 2, 20)
     msg = P.stop_all(P.snapshot())
     assert msg.startswith("Sustabdyta: 3 f.")
     assert wait_for(lambda: not P.snapshot().active, 10)

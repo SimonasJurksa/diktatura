@@ -238,6 +238,12 @@ class App(Gtk.Application):
         super().__init__(application_id=app_id, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.win = None
 
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        quit_ = Gio.SimpleAction.new("quit", None)     # `make off` uždaro langą per D-Bus (services.close_window)
+        quit_.connect("activate", lambda *_: self.quit())
+        self.add_action(quit_)
+
     def do_command_line(self, cl):
         try:
             args = parse_args(cl.get_arguments()[1:])

@@ -71,7 +71,7 @@ def test_s1_defaults_kinds_groups_ranges_locked(env):
 # ── S2: make komandos (savininkas jas naudoja; README / CLAUDE.md jas mini) ──
 MAKE_TARGETS = (
     "help doctor debug-on debug-off dlogs status recordings logs tlogs text settings training mode-vox mode-slack "
-    "mode-off start stop restart restart-all stale rec-toggle config set config-edit config-reset auto-on auto-off "
+    "mode-off start off on stop restart restart-all stale rec-toggle config set config-edit config-reset auto-on auto-off "
     "immediate defer "
     "model-azuolas model-medium asr-server-on asr-server-off transcribe-pending transcribe progress cleanup mcp sources "
     "stop-transcribe nightly-on nightly-off nightly-now tray-on tray-off tray-restart speakers name-unknown assign "

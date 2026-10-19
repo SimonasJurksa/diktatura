@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Testų gdbus (DIKTATURA_GDBUS): kvietimai -> $FAKE_SYSTEMD/gdbus; „langas atidarytas" = $FAKE_SYSTEMD/window.open.
+d="${FAKE_SYSTEMD:?}"; echo "$*" >> "$d/gdbus"
+[ -f "$d/window.open" ] || { echo "Error: The name is not activatable" >&2; exit 1; }
+rm -f "$d/window.open"; echo "()"

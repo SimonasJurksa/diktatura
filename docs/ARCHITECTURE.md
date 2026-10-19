@@ -265,6 +265,11 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   `stale_units()` — veikiantys servisai, paleisti anksčiau nei pakeistas jų kodas (`RUNNING_CODE`: kurie failai kurį
   servisą veikia; `make stale`, `make status`, `doctor` → „make restart-all"). Po `git pull` seni procesai vykdo seną
   kodą tol, kol neperkrauti — anksčiau tai pastebėdavai tik iš to, kad naujovės „neveikia".
+  `power_off()` / `power_on()` (`make off` / `make on`, CLI `python3 -m diktatura.services off|on`): kai kompiuteris
+  nebepaveža — `progress.stop_all()` (garsas lieka), `disable --now` visiems `POWER_UNITS` (įrašymas, naktinis, sekami
+  aplankai, ASR serveris, ikona) + `stop` vykstantiems oneshot'ams, langas uždaromas per D-Bus (`gdbus` → Gtk.Application
+  veiksmas `quit`). Kas buvo įjungta — `<state>/off.json`; `make on` grąžina būtent tai (be failo — paleidžia tai, kas
+  enabled) ir failą ištrina. Antras `make off` iš eilės įsimintos būsenos neperrašo. `doctor` primena „make on".
 - **Balsų atsarginė kopija** (`diktatura.backup`, stdlib): `speakers/*.json` + `pending/` → `<duomenys>/backups/
   voices-<data>.tar.gz` (laikoma 10; tą pačią sekundę — `-2`, rikiuojama pagal mtime). `make backup-voices` /
   `backups` / `restore-voices [F=]` (prieš atkūrimą — dabartinių kopija), Nustatymų mygtukas, ir AUTOMATIŠKAI

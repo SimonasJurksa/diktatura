@@ -411,3 +411,22 @@ def test_p10_settings_audio_cleanup_preview_and_confirm(env, win, gtk, monkeypat
     seen = answer(st, Gtk.ResponseType.CANCEL)                             # kitas nustatymas — be klausimo
     st.set_value("VOX_SILENCE_SEC", 9)
     assert st.save() and "dlg" not in seen
+
+
+def test_app_quit_action_over_dbus_closes_window(env, fake_systemd, monkeypatch):
+    """`make off` uždaro atidarytą langą: services.close_window -> gdbus -> „quit" veiksmas (tikras D-Bus)."""
+    from diktatura import services
+    app_id = f"lt.diktatura.Quit{os.getpid()}"
+    monkeypatch.delenv("DIKTATURA_GDBUS")
+    monkeypatch.setenv("DIKTATURA_APP_ID", app_id)
+    first = subprocess.Popen(["/usr/bin/python3", "-m", "diktatura.ui.app"], cwd=REPO, env=dict(os.environ),
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        time.sleep(2.0)
+        assert first.poll() is None, first.stdout.read()
+        assert services.close_window()
+        assert first.wait(timeout=15) == 0
+        assert not services.close_window()                               # lango nebėra — False, nieko neatidaro
+    finally:
+        if first.poll() is None:
+            first.kill()

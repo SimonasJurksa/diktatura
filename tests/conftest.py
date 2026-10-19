@@ -153,6 +153,8 @@ def fake_systemd(env, monkeypatch, tmp_path):
     monkeypatch.setenv("DIKTATURA_SYSTEMCTL", str(HELPERS / "fakebin" / "systemctl-fake"))
     monkeypatch.setenv("FAKE_SYSTEMD", str(d))
     monkeypatch.setenv("DIKTATURA_SYSTEMD_DIR", str(units))
+    monkeypatch.setenv("DIKTATURA_GDBUS", str(HELPERS / "fakebin" / "gdbus-fake"))   # make off neuždaro tikro lango
+    monkeypatch.setenv("DIKTATURA_APP_ID", "lt.diktatura.Test")
 
     class Ctl:
         state, units_dir = d, units
