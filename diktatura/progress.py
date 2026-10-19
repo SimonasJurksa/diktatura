@@ -771,6 +771,12 @@ def skip_current(snap: Snapshot = None) -> str:
         return "Nėra vykdomos transkripcijos."
     if j.server:
         return "ASR serverio darbo nutraukti negalima — išjunk ASR serverį (Nustatymai) arba palauk."
+    mark = paths.RUN_DIR / "skip" / str(j.pid)       # transcribe-file.sh tikrina prieš kiekvieną žingsnį (lenktynės:
+    try:                                              # paspaudus TARP žingsnių nebūtų ką žudyti — darbas eitų toliau)
+        mark.parent.mkdir(parents=True, exist_ok=True)
+        mark.write_text("skip")
+    except OSError:
+        pass
     procs = scan_procs()
     victims = descendants(j.pid, procs)
     _kill(victims)

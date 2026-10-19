@@ -348,7 +348,9 @@ def test_q9_skip_current_next_continues(env, P, jobs, fake_asr):
     assert wait_for(lambda: P.snapshot().running is not None and len(P.snapshot().queued) == 1, 10)
     s = P.snapshot()
     victim = s.running
-    tmpd = Path(tempfile.gettempdir()) / f"{P.TMP_PREFIX}{P.descendants(victim.pid, P.scan_procs())[0]}-x"
+    assert wait_for(lambda: P.descendants(victim.pid, P.scan_procs()), 10, 0.01)   # tarp žingsnių vaiko gali nebūti
+    kids = P.descendants(victim.pid, P.scan_procs()) or [victim.pid]
+    tmpd = Path(tempfile.gettempdir()) / f"{P.TMP_PREFIX}{kids[0]}-x"
     tmpd.mkdir()
     msg = P.skip_current(s)
     assert msg.startswith("Praleista: vox_20261012_120000.wav")
@@ -357,6 +359,23 @@ def test_q9_skip_current_next_continues(env, P, jobs, fake_asr):
     assert (env.recordings / "vox_20261012_120000.wav").exists()
     assert not (env.recordings / "vox_20261012_120000.named.txt").exists()
     assert "vartotojas praleido" in env.log("transcribe") and not tmpd.exists()
+
+
+def test_q9_skip_mark_between_steps_is_honoured(env, P, jobs, fake_asr):
+    """Lenktynės: „Praleisti" paspaustas, kai darbas TARP žingsnių (nėra vaiko, kurį nužudyti) — žymė <runtime>/skip/<pid>
+    sustabdo jį prieš kitą sunkų žingsnį. Čia: antras darbas pažymimas dar laukdamas eilėje."""
+    jobs("vox_20261012_122000.wav", "vox_20261012_122100.wav", sleep="2")
+    assert wait_for(lambda: len(P.snapshot().queued) == 1, 10)
+    second = P.snapshot().queued[0]
+    (env.run / "skip").mkdir(exist_ok=True)
+    (env.run / "skip" / str(second.pid)).write_text("skip")
+    assert wait_for(lambda: not P.snapshot().active, 20)
+    starts = [ln.split()[2] for ln in fake_asr.read_text().splitlines() if ln.startswith("start")]
+    assert starts == ["vox_20261012_122000.wav"]                                  # antrasis ASR nepradėjo
+    assert "nutraukta (bangos skaičiavimo metu) — garsas paliktas: vox_20261012_122100.wav" in env.log("transcribe") \
+        or "nutraukta (prieš transkripciją) — garsas paliktas: vox_20261012_122100.wav" in env.log("transcribe")
+    assert not (env.run / "skip" / str(second.pid)).exists()                      # žymė išvalyta
+    assert (env.recordings / "vox_20261012_122000.named.txt").exists()
 
 
 def test_q9_skip_during_waveform_step_stops_the_job(env, P, jobs, fake_asr):

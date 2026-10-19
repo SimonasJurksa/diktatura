@@ -793,6 +793,18 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | Z1  | .srt, vienos sesijos eksportas / kopijavimas, meniu   | laikai iki kitos eilutės; tik ta sesija; iškarpinė |
 | stale | servisai su senesniu kodu                           | ±1 s — ne; doctor WARN su komanda |
 
+### FZ / PE / DC / HM / MS / ST. Daugiau testų (2026-10-19, savininko prašymu: „užšaldyti, kad nesusigadintų atnaujinant") ✅
+
+| Failas | Kas užrakinta |
+| --- | --- |
+| `tests/test_freeze.py` (FZ1–FZ9) | .venv paketų versijos = requirements.txt, Python 3.10; systemd / desktop šablonų esminės eilutės, ikonos; bash keliai = Python keliai; stdlib CLI ir UI moduliai per SISTEMOS python3; MCP įrankių schema; nustatymų tvarka ir grupės; žurnalų žymės; CSS klasės; repo struktūra, vykdomi skriptai, .gitignore |
+| `tests/test_pipeline_e2e.py` (PE1, PE3–PE5), `tests/ui/test_pipeline_ui.py` (PE2) | pilnas kelias be garso įrenginio: VOX → 2 įrašai (blyksnis ištrintas) → eilė (antras laukia) → tekstas + banga + mp3 → Teksto langas (paieška, .srt, statistika, švarus) → MCP → seno garso trynimas; 3 darbai vienu metu — griežtai po vieną |
+| `tests/test_doctor_more.py` (DC1–DC6) | doctor: garsas, .venv / GTK, git sargas, balsai (senas modelis — FAIL), pakibęs būsenos failas, debug, resursai, `run_all` sekcijos, `main` išėjimo kodas |
+| `tests/test_helpers_more.py`, `tests/ui/test_helpers_ui.py` (HM1–HM9) | progress procesų medis, serijos pradžia, formatavimas; sekamų aplankų pagalbinės; banga; ikonos būsenos; grotuvas; transcripts; teksto lango tail (pusinė eilutė); VOX pagalbinės; balsų saugyklos šakos |
+| `tests/test_misc_more.py` (MS1–MS6) | žymės (pasislinkusi eilutė, sugadintas failas), statistikos nunulinimas, pauzė, `bin/rec-toggle.sh` start / stop, VOX vartų ribos, config CLI klaidos |
+| `tests/ui/test_settings_more.py` (ST1–ST4) | kiekvieno tipo nustatymas pirmyn-atgal, išorinis pakeitimas matomas (bet neperrašo neišsaugoto), numatytųjų skirtumai, kopijos mygtukas |
+| Q9c (`tests/test_progress.py`) | „Praleisti" tarp žingsnių — žymė (rasta kartojant testus) |
+
 ### N. 🔍 Nustatymų paieška ✅ — `tests/ui/test_settings_search_ui.py`
 
 | #   | Atvejis                                              | Tikimasi                                                  |

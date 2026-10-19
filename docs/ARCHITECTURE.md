@@ -437,6 +437,10 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
   `chmod --reference=bin/transcribe-file.sh` — `[t]` triukas gelbsti tik nuo paties šablono teksto). Tikri darbai
   paleidžiami kaip `bash /…/bin/transcribe-file.sh …`, tad tikrinti eilutės PRADŽIĄ:
   `pgrep -f '^(/usr/bin/|/bin/)?bash /[^ ]*/bin/[t]ranscribe-(file|pending)[.]sh'`.
+- **⏭ „Praleisti" — žymė, ne tik signalas (2026-10-19):** `skip_current()` pirma rašo `<runtime>/skip/<bash pid>`, tada
+  žudo vaikus; `transcribe-file.sh` žymę tikrina po bangos, prieš ASR ir po ASR. Be žymės paspaudus TARP žingsnių
+  (akimirką nėra vaiko — pvz. tarp `ffprobe` ir ASR) nebuvo ką žudyti ir darbas eidavo toliau — rado testų kartojimas
+  (1 iš ~6 paleidimų), testas Q9c deterministiškai. Žymė išvaloma `trap EXIT`.
 - **⏭ „Praleisti" nužudo tik VAIKĄ:** bash tęsia kitą komandą. Iki ASR tai buvo gerai (nėra išvesties → „garsas
   paliktas"), bet 🌊 smailių žingsnis (prieš ASR) nužudytas „Praleisti" metu būtų leidęs transkripcijai prasidėti —
   todėl `transcribe-file.sh` signalu nutrauktą žingsnį (rc ≥ 128) laiko darbo pabaiga (testas Q9b).
@@ -478,7 +482,7 @@ biometrija). Apsauga sluoksniais — kiekvienas veikia net jei kitas sugenda:
 
 | Komanda | Kas | Trukmė |
 |---|---|---|
-| `make test` | greiti: nustatymai, VOX (sintetinis capture, pasenusios grindys, įrenginių perjungimas), 🌊 bangos (smailės, piešimas, Tekstas, ⏳), 💊 indikatorius, sekami aplankai (eilė, skirtukai, tavo failai nepaliečiami), 🔁 iš naujo, ✨ užpildai, MCP (tikras stdio), 🔍 Nustatymų paieška, Slack (netikras `pactl`/`ffmpeg`), eilė (netikras ASR), eiga ir prognozė (tikra eilė, praleidimas, stabdymas), seno garso trynimas ir pilnas diskas, de-dup, kalbėtojai (griežtumas, tavo balsas, pataisymai, modelio perėjimas), doctor, UI, regresija (užrakinta matoma elgsena), privatumas | ~2.5 min |
+| `make test` | greiti (+ „užšaldymas": paketų versijos = requirements, systemd / desktop šablonai, bash = Python keliai, CLI per sistemos python3, MCP schema, žurnalų žymės, CSS; pilnas kelias VOX → eilė → tekstas + banga + mp3 → Tekstas → MCP → trynimas be garso įrenginio; doctor šakos; rec-toggle): nustatymai, VOX (sintetinis capture, pasenusios grindys, įrenginių perjungimas), 🌊 bangos (smailės, piešimas, Tekstas, ⏳), 💊 indikatorius, sekami aplankai (eilė, skirtukai, tavo failai nepaliečiami), 🔁 iš naujo, ✨ užpildai, MCP (tikras stdio), 🔍 Nustatymų paieška, Slack (netikras `pactl`/`ffmpeg`), eilė (netikras ASR), eiga ir prognozė (tikra eilė, praleidimas, stabdymas), seno garso trynimas ir pilnas diskas, de-dup, kalbėtojai (griežtumas, tavo balsas, pataisymai, modelio perėjimas), doctor, UI, regresija (užrakinta matoma elgsena), privatumas | ~2.5 min |
 | `make test-full` | tikras Ąžuolas + LT kalba (Common Voice CC0, `make fixtures`), WER ≤ 25 %; tikras balso modelis; tavo balsas R kanale → „Tu" | ~1–5 min |
 | `make test-e2e` | tikras VOX + ffmpeg per virtualius PulseAudio įrenginius | ~2 min |
 | `make test-privacy` | privatumo sargas | ~10 s |

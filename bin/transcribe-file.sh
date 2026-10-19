@@ -43,7 +43,15 @@ if ! flock -n 9; then
   flock 9
 fi
 # seno garso valymas — po kiekvienos transkripcijos, dar laikant eilės užraktą (dvi valymo kopijos nesusidurs)
-trap '"$PY" -m diktatura.cleanup >/dev/null 2>>"$LOG_TRANSCRIBE" || true' EXIT
+# ⏭ „Praleisti" (diktatura.progress.skip_current) palieka žymę <runtime>/skip/<šio bash pid> ir nužudo vaikus;
+# žymė tikrinama prieš kiekvieną sunkų žingsnį — kitaip paspaudus TARP žingsnių (nėra ką žudyti) darbas eitų toliau.
+SKIP_MARK="$RUN_DIR/skip/$$"
+skipped(){
+  [ -f "$SKIP_MARK" ] || return 1
+  log "⏭ nutraukta ($1) — garsas paliktas: $(basename "$IN")"
+  return 0
+}
+trap 'rm -f "$SKIP_MARK"; "$PY" -m diktatura.cleanup >/dev/null 2>>"$LOG_TRANSCRIBE" || true' EXIT
 # kol laukė eilėje, failas galėjo būti ištrintas (Nustatymai -> „Ištrinti įrašus ir tekstus")
 [ -f "$IN" ] || { log "PRALEISTA (failas ištrintas, kol laukė eilėje): $(basename "$IN")"; exit 0; }
 # 0 B / tik antraštė: garso nėra (VOX nulūžo pilname diske) — kitaip naktinis jį bandytų kas naktį
@@ -62,7 +70,7 @@ fi
 # Nepavyko — ne bėda (transkribuojam toliau); nužudytas signalu (⏳ „Praleisti" / „Sustabdyti") — darbas baigtas.
 $LOWPRIO "$PY" -m diktatura.waveform "$IN" --out "$BASE.peaks" >/dev/null 2>>"$LOG_TRANSCRIBE"
 rc=$?
-if [ "$rc" -ge 128 ]; then
+if [ "$rc" -ge 128 ] || [ -f "$SKIP_MARK" ]; then
   log "⏭ nutraukta (bangos skaičiavimo metu) — garsas paliktas: $(basename "$IN")"
   exit 1
 fi
@@ -83,6 +91,7 @@ log "ANALIZĖ pradėta: $(basename "$IN") (${chans}ch, modelis=$(basename "$MODE
 dbg "įvestis=$IN kanalai=$chans modulis=$MOD išvestis=$OUT modelis=$MODEL_ARG gijos=$THREADS laukta eilėje=$(( $(date +%s) - T_START ))s"
 T_ASR=$(date +%s)
 
+skipped "prieš transkripciją" && exit 1
 if [ -n "${DIKTATURA_ASR_CMD:-}" ]; then
   $DIKTATURA_ASR_CMD "$IN" "$OUT" >>"$LOG_TRANSCRIBE" 2>&1
 else
@@ -101,6 +110,10 @@ else
   fi
 fi
 
+if skipped "transkripcijos metu"; then
+  rm -f "$OUT" "$SRT"
+  exit 1
+fi
 dbg "ASR baigtas per $(( $(date +%s) - T_ASR ))s; išvestis $( [ -f "$OUT" ] && echo "$(wc -c < "$OUT") B" || echo NĖRA)"
 if [ ! -f "$OUT" ]; then
   log "⚠ transkripcija nedavė failo (žlugo?) — garsas paliktas: $(basename "$IN")"

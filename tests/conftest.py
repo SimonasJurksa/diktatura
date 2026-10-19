@@ -19,6 +19,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 from testenv import (AUDIO_BIN, FAKE_ASR, HELPERS, PCM_GEN, QUIET_BIN, REAL, REAL_LOCK, REAL_MODELS,  # noqa: E402,F401
                      REPO, ROOT_KEYS)
+from flowdemo import flow  # noqa: E402  (bendras pilno kelio fixture — tests/ ir tests/ui)
+
+__all__ = ["flow", "PCM_GEN", "REPO", "REAL", "AUDIO_BIN", "FAKE_ASR", "HELPERS", "QUIET_BIN", "REAL_LOCK", "REAL_MODELS"]
 
 # ── Sesijos saugiklis (vykdoma importuojant conftest, prieš testų modulius) ──
 _SESSION = Path(tempfile.mkdtemp(prefix="diktatura-test-"))
