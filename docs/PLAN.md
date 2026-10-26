@@ -48,7 +48,7 @@ Statusai: ⬜ nepradėta · 🟡 vyksta · ✅ padaryta
 
 ## Vykdymo tvarka
 
-**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅ → 14 ✅ → 14.1 ✅**
+**P ✅ → R ✅ → Q0 ✅ → 1 ✅ → 4 ✅ → 3 ✅ → 2 ✅ → 5 ✅ → 6 ✅ → D ✅ → 7 ✅ → 8 ✅ → 9 ✅ → 10 ✅ → 11 ✅ → 12 ✅ → 12.1 ✅ → 13 ✅ → 14 ✅ → 14.1 ✅ → 15 ✅ → 15.1 ✅**
 
 ---
 
@@ -475,6 +475,59 @@ nightly-off tray-off`), o `mode-off` pamiršdavo, ar buvo VOX, ar Slack.
 - Rasta darant: Q9 / Q10 testai lenktyniaudavo apkrautoje mašinoje (load ~7) — stabdydavo dar bangos žingsnyje, kol
   ASR nepradėtas (kito vaiko pid, nėra trace). Dabar laukia netikro ASR pradžios; produkto klaidos nebuvo. Testai: 444.
 
+## Etapas 15 — Apmokymai: pertikrinimas pagal išmoktus + vieta įraše ±N s ✅ (2026-10-25)
+
+Savininkas: įmetė kelių valandų susirinkimo įrašą (sekamas aplankas) → šimtai nežinomų balsų; įvardino
+~100 ir norėjo, kad likę fragmentai būtų pertikrinti pagal jau išmoktus („juose daug kartojasi to pačio žmogaus"),
+rikiavimo pagal tai, kiek kartų rasta, ir mygtuko tam. Skaičius sąraše „visada 0". Vėliau: „nušokti iki failo sekundės
+ir paklausyti kelias sekundes prieš ir po — kartais labai trumpi snippet'ai".
+- **Rasta klaida (ir priežastis „0 kart."):** `store.occurrences_many`, `rename_in_transcripts`, `text_speakers` ieškojo
+  tik įrašų kataloge, o sekamų aplankų tekstai — `<duomenys>/sources/<id>/`. Todėl ten ne tik skaičiai buvo 0, bet ir
+  **priskirti vardai tų tekstų nepasiekė** (susirinkime 145 apdoroti balsai, tekste — nė vieno vardo; ~400 eilučių).
+  Pataisa: `store.transcript_files()` (įrašai + visi sekami aplankai) visiems perėjimams; `store.apply_assigned()` —
+  pagal `assigned.json` pritaiko senus priskyrimus (paleidžiama prieš kiekvieną pertikrinimą). G11, G12.
+- **🔄 Pertikrinti pagal išmoktus** (`diktatura.speakers.suggest`, fone per .venv): kiekvienas laukiantis balsas
+  lyginamas su registruotais ir tavo balsu → 💡 pasiūlymas (sąraše viršuje, vardas jau laukelyje — Enter). Vyksta ir
+  pats: atidarius skiltį, jei pasikeitė balsai / yra netikrintų, ir po kiekvieno priskyrimo (įvardinus vieną — kiti jo
+  fragmentai gauna 💡). „✔ Priimti užtikrintus" — tik tuos, kuriuos transkripcija atpažintų pati; be mokymosi. G13, G15.
+- **Kodėl ne automatiškai:** matuota savininko susirinkime („palik vieną" su jau įvardintais): fragmentai trumpi
+  (mediana 1.6 s), slenksčiu 0.5 nė vienas iš 392 netiko; 0.4 slenksčiu ~3 iš 4 pasiūlymų teisingi. Todėl —
+  pasiūlymas + patvirtinimas; slenkstis — naujas nustatymas `SPEAKER_SUGGEST` (0.4).
+- **Triukšmas tik kai vardas netinka:** lyginant kartu, triukšmo pavyzdžiai nustelbė žmones (teisingų liko 2 iš 50).
+- **Balso profilis** — ≥ 2 eilučių balsui embedding'as iš visų jo eilučių kalbos (≤ 8 eil., ≤ 30 s), kešas
+  `speakers/profiles.json`: teisingų pasiūlymų 75 % → 83 %, užtikrintų teisingų 4 → 7. Pirmą kartą susirinkimui ~48 s,
+  vėliau < 1 s. Tikruose duomenyse (kopijoje): 392 laukiantys → 197 pasiūlymai (36 užtikrinti, 103 triukšmas). G14.
+- **Rikiavimas:** 💡 pasiūlymai pirma / dažniausiai kalbėję / pagal laiką įraše.
+- **🔊 Įraše ±N s** (numatytai 3 s): eilutės vieta originaliame įraše su paraštėmis; spragtelėjus „Ką sakė" eilutę —
+  groja ji (`ui.player.command(…, dur)`). G16.
+- Fone baigęsis pertikrinimas nebestabdo grojimo ir neperrašo ranka įvesto vardo (`reload(keep_current=True)`).
+- Testai: 24 nauji (`tests/test_suggest.py`, `tests/ui/test_training.py`); išdėstymo užraktas (SU3) ir nustatymų
+  užraktas (S1) atnaujinti. Galerija: `training.png`, `theme-contrast.png`.
+
+## Etapas 15.1 — „Išeiti" išjungia ir transkripciją + Apmokymai klaviatūra ✅ (2026-10-26)
+
+Savininkas: „išjungus programėlę — kad išsijungtų ir transkripcija, nes nesimato, ar ji veikia"; Apmokymuose —
+„kombinacija paleistų play ir kursorius būtų vardo laukelyje; parašius ir Enter — eitų kitas garso įrašas, kursorius
+pasiruošęs rašyti vardą arba pasirinkti esamą".
+- **Kas nutiko:** sekamo aplanko „Transkribuoti dabar" paleido 1 val. 13 min įrašą; ikona uždaryta „Išeiti" (tada —
+  tik ikona), langas taip pat → transkripcija ~2,5 val. ėjo nematoma; `make status` „Vyksta dabar" buvo tuščias.
+- **„Išeiti" = Diktatūra išjungta** (`services.quit_app`): kol transkribuojama — meniu „Išeiti (sustabdys
+  transkripciją)" ir klausimas (failas, kiek liko); langas uždaromas, vykstanti sustabdoma (garsas lieka), žymė
+  `<state>/quit.json` → naujos (naktinis, sekami aplankai, po įrašo) neprasideda (`bin/common.sh app_quit` abiejuose
+  skriptuose). Ikonos paleidimas (dokas / programų meniu / `make tray-on`) žymę nuima. Kol atidarytas langas (laiko
+  `<runtime>/window.lock`) — transkribuoti galima; uždarant jį su vykstančia — klausiama ir sustabdoma.
+  `make transcribe-pending` žymę ignoruoja. Įrašymo režimas nekeičiamas. `doctor` — ⚠.
+- **`make status` „Vyksta dabar"** — iš `progress` (bet koks failas, + „⏻ išjungta"); **eiga**: `--sources` paleidimui
+  nebepriskaičiuojami įrašų katalogo failai (rodė „eilėje 234 · liko ~4 val. 39 min", tikrai ~1,5 val.).
+- **Apmokymai klaviatūra:** Ctrl+Tarpas — groti / stabdyti pavyzdį, Ctrl+Shift+Tarpas — vieta įraše; žymeklis →
+  vardo laukelis. Enter — įrašo ir **kitas groja pats** (taip pat po „Ne žmogus", „Tai aš", ◀ / ▶); tuščias Enter —
+  praleisti; esamas vardas rodyklėmis + Enter — iškart priskiriamas. Sąmoningai ne „inline" užbaigimas: „Ona" būtų
+  virtusi „Onute". Ctrl+Tarpas laisvas (kalba — Super+Tarpas, lango meniu — Alt+Tarpas).
+- **Neišspręsta (užfiksuota):** pervadintas sekamo aplanko failas transkribuojamas iš naujo (tekstas susietas su
+  vardu) — ARCHITECTURE.md gotchas.
+- Testai: 15 naujų (`tests/test_quit.py` QT1–QT6, `tests/ui/test_quit_ui.py` QT7–QT9, `tests/ui/test_training.py` — 3);
+  2 seni pritaikyti (perjungus balsą kitas dabar groja pats).
+
 ---
 
 ## ❓ Nauji klausimai (su mano rekomendacija)
@@ -598,7 +651,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | F2  | tikra „Tu" eilutė                         | lieka      |
 | F3  | trumpa reakcija (< 3 žodžiai)             | lieka      |
 
-### G. Kalbėtojai / apmokymai ✅ — `tests/test_speakers.py`, `tests/test_teach.py`, `tests/ui/test_training.py`, `tests/ui/test_text_features.py`
+### G. Kalbėtojai / apmokymai ✅ — `tests/test_speakers.py`, `tests/test_teach.py`, `tests/test_voice_model.py`, `tests/test_suggest.py`, `tests/ui/test_training.py`, `tests/ui/test_text_features.py`
 
 | #   | Atvejis                                                   | Tikimasi                                                               |
 | --- | --------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -611,6 +664,14 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | G7  | „🙋 Tai aš" / vardas „Tu"; tavo balso pavyzdžių riba       | `owner.json` (≤ 40), tekstuose → `Tu`; „Tu" nėra kolegos vardas        |
 | G8  | eilutės laikas ir pervadinimas („✎ Kas kalbėjo?")         | tik ta eilutė; pasikeitusi eilutė neperrašoma                          |
 | G9  | mokymasis iš pataisymo (`speakers.teach`)                 | R kanalas jei yra kalbos, kitaip L; < 1.5 s kalbos → nemokoma (kodas 3) |
+| G10 | balso modelio žymė, `speakers-migrate`, `speakers-relabel` | senas modelis → vardai nerašomi; migrate archyvuoja; relabel be APPLY nieko nekeičia |
+| G11 | sekamų aplankų tekstai (`store.transcript_files`)          | eilutės / „N kart. · M sesij." skaičiuojami, priskirtas vardas pakeičiamas ir ten (buvo 0) |
+| G12 | `store.apply_assigned`, `assign_many`                      | seni priskyrimai pritaikomi (laukiantys — ne), kartojant 0; užtikrinti — be mokymosi |
+| G13 | pasiūlymai (`speakers.suggest`)                           | užtikrintas / 💡 / per panašūs → nieko / „Tu"; triukšmas tik kai vardas netinka; senas modelis → atsisako |
+| G14 | balso profilis iš visų eilučių                           | tik kalba (VAD), kešas, eilutėms pasikeitus — iš naujo; klaida → trumpas pavyzdys |
+| G15 | 💡 Apmokymuose (UI)                                        | viršuje, vardas laukelyje, Enter priima; rikiavimas; „Priimti užtikrintus"; 🔄 fone; grojimas / įvestas vardas nepaliečiami |
+| G16 | 🔊 Įraše ±N s                                              | eilutės vieta su paraštėmis (ir spragtelėta eilutė); nėra garso → pranešimas; VOX pauzė |
+| G17 | Apmokymai klaviatūra                                      | Ctrl+Tarpas groja / stabdo, Ctrl+Shift — vieta įraše, žymeklis laukelyje; Enter — įrašo ir kitas groja; tuščias — praleidžia; sąrašo vardas Enter — priskiria |
 
 ### H. VAD pre-filtras [full]
 
@@ -827,6 +888,20 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | PW5 | off vykstant transkripcijai                          | nutraukiama, garsas lieka be teksto |
 | quit | `services.close_window()` per tikrą D-Bus            | langas užsidaro (0); lango nėra — False |
 
+### QT. ikonos „Išeiti" — transkripcija nevyksta nematoma ✅ — `tests/test_quit.py`, `tests/ui/test_quit_ui.py`
+
+| #   | Atvejis                                              | Tikimasi                                                  |
+| --- | ---------------------------------------------------- | --------------------------------------------------------- |
+| QT1 | žymė, lango užraktas, nuėmimas                       | išjungta → blokuota; langas atidarytas → leidžiama; sugadinta žymė — vis tiek žymė |
+| QT2 | `quit_app` vykstant transkripcijai                   | langas uždarytas, nutraukta, garsas lieka; oneshot'ai stop; režimas nekeistas |
+| QT3 | skriptai, kol išjungta; `make transcribe-pending`; bash = Python | po įrašo / naktinis nepradeda (log), sekami — tyliai; langas atidarytas — daro; make — daro |
+| QT4 | `--sources` eilė                                      | tik aplankų failai; įrašai — „laukia naktinio" |
+| QT5 | `progress --now`, doctor, Makefile                    | „⏳ transkribuojama: <failas>", „⏻ išjungta …"; doctor ⚠ „make tray-on" |
+| QT6 | ikonos paleidimas                                     | žymė nuimta |
+| QT7 | ikonos „Išeiti" (UI)                                  | vykstant — užrašas ir klausimas; Atšaukti — nieko; nieko nevyksta — be klausimo |
+| QT8 | lango uždarymas, kai išjungta                         | vykstant — klausimas; Palikti — atidarytas; sutikus — sustabdyta |
+| QT9 | tikras langas (atskiras procesas)                     | laiko užraktą; uždarius — dingsta |
+
 ### N. 🔍 Nustatymų paieška ✅ — `tests/ui/test_settings_search_ui.py`
 
 | #   | Atvejis                                              | Tikimasi                                                  |
@@ -855,6 +930,7 @@ Po **kiekvieno** pakeitimo: `make test`. Prieš push: `make test-full && make te
 | seno garso trynimas / dienos / GB      | kurių įrašų garsas ištrinamas       | P1–P5, P10     |
 | VAD min kalba / paddingas              | praleidimas / trim                  | H1–H6          |
 | vardo slenkstis / atsarga              | vardas ↔ `Kolega?` (griežtumas)     | G6, G10        |
+| pasiūlymų slenkstis (Apmokymuose)      | kam rodomas 💡 / kas užtikrinta      | G13, G15       |
 | kolegų garso šalinimas (mikrofone)     | L be R kopijos / kaip anksčiau      | L5             |
 | tema                                   | lango išvaizda, šriftas, spalvos    | O1–O5          |
 | debug                                  | `debug.log` pildosi                 | `test_debug_doctor.py` |
@@ -867,6 +943,9 @@ Logika ištestuota automatiškai (nurodyta skliaustuose); žmogaus akims / ausim
 - [ ] Pulsuoja, kai yra pending; nustoja, kai visi priskirti (logika: I6)
 - [ ] Meniu: ⚙ Nustatymai viršuje; „🎓 Apmokymai paruošti (N)" kai pending; vidurinis klik → Nustatymai (I6)
 - [ ] Apmokymai: grojimas girdisi, vardo autocomplete, navigacija, tekstuose vardas atsinaujina (I5, G4)
+- [ ] Apmokymai: „🔊 Įraše" girdisi ta vieta su ±3 s; 💡 pasiūlymas tinka dažniausiai (logika: G13–G16)
+- [ ] Apmokymai: Ctrl+Tarpas girdisi, rašai → Enter → kitas groja pats; ↓ + Enter iš sąrašo (logika: G17)
+- [ ] Ikonos „Išeiti" transkribuojant — klausia, po to 🟡 nebėra ir `make status` rodo „⏻ išjungta" (logika: QT2, QT7)
 - [x] Nustatymai: pakeitimas veikia be restarto; „Atkurti numatytus" atstato (I4, B6, J2)
 - [x] Teksto langas: paieška, Ctrl+F, ◀ ▶, laikymo trimingas, filtrai, žymės, eksportas (I2, I3, Etapas 6)
 - [ ] ▶ Groti nuo eilutės — girdisi teisinga vieta, paryškinama einama eilutė (logika: Etapo 6 testai)

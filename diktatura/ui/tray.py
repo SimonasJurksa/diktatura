@@ -10,6 +10,9 @@ Kol transkribuojama — meniu punktas „⏳ 43 % · liko ~1 val. · eilėje 4" 
 Ubuntu AppIndicator paspaudus VISADA atidaro meniu (langas tiesiai neatsidaro), todėl: meniu viršuje
 „⚙ Nustatymai" (ir „🎓 Apmokymai paruošti (N)", kai yra laukiančių); vidurinis klik -> iškart Nustatymai.
 Langai atidaromi per `diktatura.ui.app --page …` (vienas egzempliorius).
+„Išeiti" = Diktatūra išjungiama (services.quit_app): uždaromas ir langas, vykstanti transkripcija sustabdoma (prieš tai
+klausiama — matosi, kiek liko), o naujos neprasideda, kol ikona vėl nepaleista (programų meniu / dokas / make tray-on) —
+kitaip transkripcija vyktų nematoma. Įrašymo režimas nekeičiamas. Paleista ikona žymę nuima (main).
 Paleidimas: SISTEMOS python3 (turi gi):  python3 -m diktatura.ui.tray   (systemd: diktatura-tray.service)
 """
 import os
@@ -56,6 +59,33 @@ def open_app(page: str) -> None:
     subprocess.Popen(["/usr/bin/python3", "-m", "diktatura.ui.app", *args], cwd=str(paths.REPO), env=env)
 
 
+def quit_label(snap) -> str:
+    """„Išeiti" — kai vyksta transkripcija, iškart matosi, kad ji bus sustabdyta."""
+    return "Išeiti (sustabdys transkripciją)" if snap is not None and snap.active else "Išeiti"
+
+
+def quit_question(snap) -> str:
+    j = snap.running
+    what = f"„{j.name}“ — {progress.summary(snap)}" if j else progress.summary(snap)
+    return (f"Vyksta transkripcija: {what}.\n\nIšjungus Diktatūrą ji bus sustabdyta (garsas lieka) ir nauja "
+            "neprasidės, kol vėl neįjungsi Diktatūros (programų meniu ar dokas) — tada failas bus transkribuotas iš "
+            "naujo. Įrašymas (VOX / Slack) veikia kaip nustatyta.")
+
+
+def confirm_quit(text: str) -> bool:
+    from diktatura.ui.gtk import Gtk
+    dlg = Gtk.MessageDialog(message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.NONE,
+                            text="Išjungti Diktatūrą ir sustabdyti transkripciją?")
+    dlg.format_secondary_text(text)
+    dlg.add_buttons("Atšaukti", Gtk.ResponseType.CANCEL, "Išeiti ir sustabdyti", Gtk.ResponseType.OK)
+    dlg.set_default_response(Gtk.ResponseType.CANCEL)
+    dlg.set_keep_above(True)
+    try:
+        return dlg.run() == Gtk.ResponseType.OK
+    finally:
+        dlg.destroy()
+
+
 def progress_label(snap) -> str:
     """Meniu punktas: „⏳ 43 % · liko ~1 val. 20 min · eilėje 4" ("" — nieko nevyksta)."""
     s = progress.summary(snap)
@@ -64,11 +94,13 @@ def progress_label(snap) -> str:
 
 class Tray:
     def __init__(self, indicator=None, opener=open_app, state_fn=current_state, mode_fn=services.recorder_mode,
-                 pending_fn=store.pending_count, timers=True, progress_fn=progress.snapshot, pill=None):
+                 pending_fn=store.pending_count, timers=True, progress_fn=progress.snapshot, pill=None,
+                 confirm_fn=confirm_quit, quit_fn=services.quit_app, main_quit=None):
         from diktatura.ui.gtk import GLib, Gtk
         self.Gtk = Gtk
         self.opener, self.state_fn, self.mode_fn, self.pending_fn = opener, state_fn, mode_fn, pending_fn
         self.progress_fn = progress_fn
+        self.confirm_fn, self.quit_fn, self.main_quit = confirm_fn, quit_fn, main_quit or Gtk.main_quit
         self.ind = indicator or self._make_indicator()
         self.menu = Gtk.Menu()
         self.it_settings = self._item("⚙ Nustatymai", lambda: self.opener("settings"))
@@ -80,7 +112,7 @@ class Tray:
         self.it_mode = self._item("Režimas: …", None)
         self.menu.append(Gtk.SeparatorMenuItem())
         self._item("Atidaryti įrašų aplanką", lambda: subprocess.Popen(["xdg-open", str(paths.RECORDINGS)]))
-        self._item("Išeiti", Gtk.main_quit)          # tik ikona; įrašymas (VOX / Slack servisas) veikia toliau
+        self.it_quit = self._item("Išeiti", self.quit)    # Diktatūra išjungiama; įrašymas (VOX / Slack) veikia toliau
         self.menu.show_all()
         self.ind.set_menu(self.menu)
         self.ind.set_secondary_activate_target(self.it_settings)      # vidurinis klik -> Nustatymai
@@ -95,6 +127,21 @@ class Tray:
                 view = pill_mod.PillView(on_click=self.on_pill_click, on_close=lambda: self.pill.dismiss())
                 self.pill = pill_mod.PillController(view, snap_fn=self.progress_fn)
             GLib.timeout_add(100, self._pill_tick)
+
+    def quit(self) -> bool:
+        """„Išeiti": vyksta transkripcija — paklausti (matosi kuri ir kiek liko); tada Diktatūra išjungiama
+        (services.quit_app: langas, transkripcijos, žymė) ir ikona baigia darbą."""
+        try:
+            snap = self.progress_fn()
+        except Exception:
+            snap = None
+        if snap is not None and snap.active and not self.confirm_fn(quit_question(snap)):
+            return False
+        try:
+            self.quit_fn()
+        finally:
+            self.main_quit()
+        return True
 
     def _pill_tick(self):
         try:
@@ -148,6 +195,7 @@ class Tray:
         self.it_mode.set_label(f"Režimas: {services.MODE_LABELS[self.mode_fn()].split(' — ')[0]}")
         self.it_training.set_label(training_label(self.pending))
         self.it_training.set_visible(bool(self.pending))
+        self.it_quit.set_label(quit_label(snap))
         prog = progress_label(snap) if snap is not None else ""
         self.it_progress.set_label(prog or "⏳")
         self.it_progress.set_visible(bool(prog))
@@ -162,6 +210,7 @@ class Tray:
 
 def main():
     from diktatura.ui.gtk import Gtk
+    services.clear_quit()                    # ikona paleista = Diktatūra vėl įjungta: transkripcijos vėl gali vykti
     Tray()
     Gtk.main()
 

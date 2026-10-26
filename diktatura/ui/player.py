@@ -1,8 +1,8 @@
-"""Diktatūra — garso grojimas nuo nurodyto laiko (teksto lange: „▶ Groti nuo čia").
+"""Diktatūra — garso grojimas nuo nurodyto laiko (teksto lange: „▶ Groti nuo čia"; Apmokymuose — vieta įraše ±N s).
 
 ffplay (ffmpeg paketas) be lango; stereo įrašas (L = tu, R = kolegos) sumaišomas į abi ausis.
-Pozicija skaičiuojama: pradžia + praėjęs laikas (užtenka eilutei paryškinti).
-Testams: DIKTATURA_SEEK_PLAYER — komandos šablonas su {start} ir {file} (garsas negroja).
+Pozicija skaičiuojama: pradžia + praėjęs laikas (užtenka eilutei paryškinti). dur — groti tik tiek sekundžių.
+Testams: DIKTATURA_SEEK_PLAYER — komandos šablonas su {start}, {file} (ir nebūtinu {dur}) (garsas negroja).
 """
 import os
 import shlex
@@ -12,11 +12,12 @@ import time
 MIX = "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1"
 
 
-def command(path: str, start: float) -> list:
+def command(path: str, start: float, dur: float = None) -> list:
     tpl = os.environ.get("DIKTATURA_SEEK_PLAYER")
     if tpl:
-        return [a.format(start=f"{start:.2f}", file=path) for a in shlex.split(tpl)]
-    return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-ss", f"{start:.2f}", "-af", MIX, path]
+        return [a.format(start=f"{start:.2f}", file=path, dur=f"{dur or 0:.2f}") for a in shlex.split(tpl)]
+    limit = ["-t", f"{dur:.2f}"] if dur else []
+    return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-ss", f"{start:.2f}", *limit, "-af", MIX, path]
 
 
 class SeekPlayer:

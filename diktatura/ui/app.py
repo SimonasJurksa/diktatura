@@ -7,12 +7,15 @@ atidarytame lange (taip daro status bar ikonos meniu). Paleidimas — SISTEMOS p
 (README screenshot'ams). Env DIKTATURA_APP_ID — kitas id (testams).
 📄 Tekstas — TextTabs: „🎙 Pokalbiai" (įrašų katalogas) + po skirtuką kiekvienam sekamam aplankui (diktatura.sources);
 be sekamų aplankų skirtukų juosta nerodoma. win.text — pagrindinis (pokalbių) TextPage.
+Kol langas atidarytas, jis laiko <runtime>/window.lock (services.window_open): net išjungus Diktatūrą ikonos „Išeiti",
+transkribuoti galima (eiga matosi lange). Tada uždarant langą su vykstančia transkripcija — klausiama (confirm_close):
+uždarius ji būtų nematoma, todėl sustabdoma.
 """
 import argparse
 import os
 import sys
 
-from diktatura import config, sources
+from diktatura import config, progress, services, sources
 from diktatura.ui import themes
 from diktatura.ui.gtk import Gdk, Gio, GLib, Gtk, install_css
 from diktatura.ui.settings_page import SettingsPage
@@ -138,6 +141,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.current = "text"
         self.stack.connect("notify::visible-child-name", self._on_page)
         self.connect("key-press-event", self._on_key)
+        self.connect("delete-event", lambda _w, _e: not self.confirm_close())
         self.connect("destroy", lambda _w: self._on_destroy())
         self.apply_theme()
 
@@ -153,6 +157,38 @@ class MainWindow(Gtk.ApplicationWindow):
             if hasattr(page, "on_theme"):
                 page.on_theme(self.theme)
         return self.theme
+
+    def confirm_close(self, ask=None) -> bool:
+        """Uždarant: jei Diktatūra išjungta ikonos „Išeiti" ir vyksta transkripcija — uždarius langą ji būtų nematoma,
+        todėl paklausti ir sustabdyti. -> True — galima uždaryti. ask(tekstas) -> bool — testams."""
+        if services.quit_state() is None:
+            return True
+        try:
+            snap = progress.snapshot()
+        except Exception:                         # eiga — tik informacija; langas užsidaro
+            return True
+        if not snap.active:
+            return True
+        j = snap.running
+        what = f"„{j.name}“ — {progress.summary(snap)}" if j else progress.summary(snap)
+        text = (f"Vyksta transkripcija: {what}.\n\nDiktatūra išjungta (ikonos „Išeiti“), tad uždarius langą "
+                "transkripcija būtų nematoma — ji bus sustabdyta (garsas lieka). Kad ji vyktų toliau, palik langą "
+                "atidarytą arba įjunk Diktatūrą iš programų meniu.")
+        if not (ask or self._ask_stop)(text):
+            return False
+        progress.stop_all(snap)
+        return True
+
+    def _ask_stop(self, text: str) -> bool:
+        dlg = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+                                buttons=Gtk.ButtonsType.NONE, text="Uždaryti langą ir sustabdyti transkripciją?")
+        dlg.format_secondary_text(text)
+        dlg.add_buttons("Palikti langą", Gtk.ResponseType.CANCEL, "Sustabdyti ir uždaryti", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.CANCEL)
+        try:
+            return dlg.run() == Gtk.ResponseType.OK
+        finally:
+            dlg.destroy()
 
     def _on_destroy(self) -> None:
         self.stop_audio()
@@ -211,6 +247,8 @@ class MainWindow(Gtk.ApplicationWindow):
             return self.text_tabs.current().on_key(ev)
         if self.current == "settings":
             return self.settings.on_key(ev)
+        if self.current == "training":
+            return self.training.on_key(ev)
         return False
 
     def screenshot(self, path: str, quit_after: bool = False):
@@ -243,6 +281,7 @@ class App(Gtk.Application):
         quit_ = Gio.SimpleAction.new("quit", None)     # `make off` uždaro langą per D-Bus (services.close_window)
         quit_.connect("activate", lambda *_: self.quit())
         self.add_action(quit_)
+        self._window_lock = services.hold_window_lock()   # kol procesas gyvas: langas atidarytas (transkripcija matoma)
 
     def do_command_line(self, cl):
         try:

@@ -106,8 +106,10 @@ def test_su3_layout_buttons_and_groups_locked(win):
     assert _buttons(win.text) == ["Regex", "◀", "▶", "Tik žymėtos ⭐☐", "⏹ Stabdyti grojimą", "🌊 Banga",
                                   "✨ Švarus", "📊 Statistika", "⏳ Transkripcija", "💾 Eksportuoti…", "Kopijuoti viską",
                                   "Sekti naujus", "⤓ Naujausia"]
-    assert _buttons(win.training) == ["▶ Groti pavyzdį", "⏹ Stabdyti", "✔ Įrašyti", "◀ Ankstesnis", "Kitas ▶",
-                                      "⏭ Praleisti", "🙋 Tai aš", "🗑 Ne žmogus / triukšmas", "📄 Grįžti į tekstą"]
+    assert _buttons(win.training) == ["🔄 Pertikrinti pagal išmoktus", "✔ Priimti užtikrintus (0)",
+                                      "▶ Groti pavyzdį", "🔊 Įraše", "⏹ Stabdyti", "✔ Įrašyti", "◀ Ankstesnis",
+                                      "Kitas ▶", "⏭ Praleisti", "🙋 Tai aš", "🗑 Ne žmogus / triukšmas",
+                                      "📄 Grįžti į tekstą"]
     assert _frames(win.settings) == ["Įrašymo režimas", "Išvaizda", "Tekstas", "Įrašymas", "Transkripcija",
                                      "Sekami aplankai",
                                      "VAD (kalbos filtras)", "Kalbėtojai", "Archyvas", "Debug",

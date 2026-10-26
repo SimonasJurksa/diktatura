@@ -11,9 +11,15 @@ Failai (<duomenys>/speakers/, paths.SPEAKERS):
                  nesulyginami; be žymės, bet su balsais = LEGACY_MODEL -> make speakers-migrate)
   owner.json     [{"embedding", "src", "added"}, ...] — TAVO balsas (paskutiniai OWNER_MAX pavyzdžių): jei kalbi
                  per kolegų kanalą (pvz. prisijungęs telefonu), tokios eilutės žymimos „Tu", o ne kolegos vardu.
+  suggestions.json  laukiančių balsų pasiūlymai (💡 Apmokymuose) — rašo diktatura.speakers.suggest:
+                 {"started", "voices" (voices_signature), "threshold", "margin", "suggest", "checked": [nezN],
+                 "items": {nezN: {"name" ("" = triukšmas), "sim", "alt", "alt_sim", "strong", "basis", "lines"}}}
+  profiles.json  {nezN: {"key", "embedding", "speech_sec"}} — balso „profilis" iš visų jo eilučių (suggest kešas)
 
-Tekstuose nežinomas balsas žymimas „Kolega?nezN"; priskyrus vardą, visose transkripcijose
-„Kolega?nezN" -> vardas (rename_in_transcripts). Embedding'ai čia — paprasti sąrašai (be numpy).
+Tekstuose nežinomas balsas žymimas „Kolega?nezN"; priskyrus vardą, VISOSE transkripcijose (įrašų kataloge IR
+sekamų aplankų tekstuose <duomenys>/sources/<id>/ — transcript_files) „Kolega?nezN" -> vardas (rename_in_transcripts).
+apply_assigned — tą patį padaro pagal assigned.json visiems tekstams (pataiso, ko priskyrimas nepasiekė: iki
+2026-10-25 sekamų aplankų tekstai buvo praleidžiami). Embedding'ai čia — paprasti sąrašai (be numpy).
 """
 import fcntl
 import json
@@ -27,6 +33,7 @@ from pathlib import Path
 from diktatura import paths, sessions
 
 UNKNOWN = "Kolega?"
+SUGGEST_MARGIN = 0.05   # pasiūlymui: bent tiek panašesnis į siūlomą nei į antrą kandidatą (diktatura.speakers.suggest)
 EMB_MODEL = "3dspeaker_campplus_zh_en_advanced"      # dabartinis balso modelis (failas — paths.EMB_MODEL_FILE)
 LEGACY_MODEL = "3dspeaker_campplus_en_voxceleb"      # iki 2026-10-09 (tada žymės failo nebuvo)
 ME = "Tu"               # tavo eilutės (L kanalas; R kanale — kai atpažintas tavo balsas)
@@ -248,26 +255,49 @@ def load_ignored() -> list:
     return _read_json(paths.SPEAKERS / "ignored.json", [])
 
 
-def assign(pid: str, name: str) -> int:
+def assign(pid: str, name: str, learn: bool = True) -> int:
     """Nežinomas balsas -> vardas: embedding į enroll.json, pending pašalinamas, tekstuose
-    „Kolega?nezN" -> vardas. Vardas „Tu" -> tai tavo balsas (assign_owner). Grąžina pakeistų teksto eilučių skaičių."""
+    „Kolega?nezN" -> vardas. Vardas „Tu" -> tai tavo balsas (assign_owner). learn=False — balsas neišmokstamas
+    (tik vardas tekstuose; pvz. priimant užtikrintus pasiūlymus). Grąžina pakeistų teksto eilučių skaičių."""
     if is_me(name):
-        return assign_owner(pid)
+        return assign_owner(pid, learn)
     name = clean_name(name)
     p = get_pending(pid)
-    add_embedding(name, p.embedding)
+    if learn:
+        add_embedding(name, p.embedding)
     _remember_assigned(pid, name)
     _remove_pending(pid)
     return rename_in_transcripts(label_for(pid), name)
 
 
-def assign_owner(pid: str) -> int:
+def assign_owner(pid: str, learn: bool = True) -> int:
     """Nežinomas balsas — tai TU (pvz. prisijungęs telefonu): embedding -> owner.json, tekstuose -> „Tu"."""
     p = get_pending(pid)
-    add_owner(p.embedding, p.src)
+    if learn:
+        add_owner(p.embedding, p.src)
     _remember_assigned(pid, ME)
     _remove_pending(pid)
     return rename_in_transcripts(label_for(pid), ME)
+
+
+def assign_many(pairs) -> int:
+    """Daug nežinomų iš karto [(nezN, vardas | "Tu" | "" = triukšmas)] — balsai NEišmokstami (užtikrinti pasiūlymai:
+    tokius transkripcija ir pati atpažintų), tekstai perrašomi vienu perėjimu (apply_assigned).
+    -> pakeistų teksto eilučių skaičius. Nebelaukiantys (jau priskirti) praleidžiami."""
+    pend = {p.id for p in list_pending()}
+    d = load_assigned()
+    done = []
+    for pid, name in pairs:
+        if pid not in pend:
+            continue
+        d[pid] = ME if is_me(name) else (clean_name(name) if name else "")
+        done.append(pid)
+    if not done:
+        return 0
+    _atomic_write(paths.SPEAKERS / "assigned.json", json.dumps(d, ensure_ascii=False))
+    for pid in done:
+        _remove_pending(pid)
+    return apply_assigned()
 
 
 def discard(pid: str, remember: bool = True) -> int:
@@ -316,29 +346,117 @@ def resolve_labels(rows):
     return out
 
 
+# ── Pasiūlymai (💡 Apmokymuose; skaičiuoja diktatura.speakers.suggest) ──
+
+def suggestions_file() -> Path:
+    return paths.SPEAKERS / "suggestions.json"
+
+
+def load_suggestions(pending_ids=None) -> dict:
+    """{nezN: {"name" ("" = triukšmas, „Tu" = tavo balsas), "sim", "alt", "alt_sim", "strong", "basis", "lines"}}
+    — tik dar laukiantiems (pending_ids; None — visi faile)."""
+    d = _read_json(suggestions_file(), {})
+    items = d.get("items") if isinstance(d, dict) else None
+    if not isinstance(items, dict):
+        return {}
+    return {k: v for k, v in items.items()
+            if isinstance(v, dict) and "name" in v and (pending_ids is None or k in pending_ids)}
+
+
+def voices_signature() -> dict:
+    """Su kuo lyginama: registruoti balsai, tavo balsas, triukšmo pavyzdžiai — {failas: keitimo laikas ns | None}.
+    Pasikeitus (ir ištrynus, pvz. „Ištrinti balsus") — pasiūlymai pasenę."""
+    out = {}
+    for name in ("enroll.json", "owner.json", "ignored.json"):
+        try:
+            out[name] = (paths.SPEAKERS / name).stat().st_mtime_ns
+        except OSError:
+            out[name] = None
+    return out
+
+
+def suggestions_stale(threshold: float, margin: float, suggest: float, pending_ids=None) -> bool:
+    """Ar pasiūlymus reikia perskaičiuoti: nėra; kiti slenksčiai; nuo skaičiavimo pradžios pasikeitė (ar ištrinti)
+    registruoti balsai / tavo balsas / triukšmo pavyzdžiai; atsirado dar netikrintų laukiančių."""
+    d = _read_json(suggestions_file(), None)
+    if not isinstance(d, dict):
+        return True
+    if [d.get("threshold"), d.get("margin"), d.get("suggest")] != [threshold, margin, suggest]:
+        return True
+    if d.get("voices") != voices_signature():
+        return True
+    ids = {p.id for p in list_pending()} if pending_ids is None else set(pending_ids)
+    return bool(ids - set(d.get("checked") or ()))
+
+
 # ── Transkripcijos ──
+
+def transcript_files(rec_dir=None) -> list:
+    """Visos rodomos transkripcijos: įrašų katalogas + sekamų aplankų tekstai (<duomenys>/sources/<id>/), sena -> nauja
+    kiekviename kataloge. rec_dir — tik tas katalogas."""
+    if rec_dir is not None:
+        return sessions.text_files(Path(rec_dir))
+    out = sessions.text_files(paths.RECORDINGS)
+    if paths.SOURCES_DATA.is_dir():
+        for d in sorted(paths.SOURCES_DATA.iterdir()):
+            if d.is_dir():
+                out += sessions.text_files(d)
+    return out
+
 
 def _speaker_re(label: str):
     return re.compile(r"^(\[\d+:\d\d:\d\d\]\s+)" + re.escape(label) + r"(?=:)", re.M)
 
 
-def rename_in_transcripts(old_label: str, new_label: str, rec_dir=None) -> int:
-    """Visose rodomose transkripcijose kalbėtoją old_label pakeisti new_label (tik kalbėtojo vietoje,
-    ne tekste). Rašoma atomiškai. Grąžina pakeistų eilučių skaičių."""
-    rx = _speaker_re(old_label)
+def _rewrite_speakers(rx, repl, rec_dir=None) -> int:
+    """Visose transkripcijose kalbėtojo vietą (rx: grupė 1 — „[laikas] ") perrašyti repl(m) -> naujas žymuo | None
+    (None — nekeisti). Rašoma atomiškai, tik pasikeitę failai. -> pakeistų eilučių skaičius."""
     total = 0
-    for f in Path(rec_dir or paths.RECORDINGS).glob("*.txt"):
-        if not sessions.is_display_text(f.name):
-            continue
+    for f in transcript_files(rec_dir):
         try:
             text = f.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        new, n = rx.subn(lambda m: m.group(1) + new_label, text)
+        n = 0
+
+        def sub(m):
+            nonlocal n
+            new = repl(m)
+            if new is None:
+                return m.group(0)
+            n += 1
+            return m.group(1) + new
+        new_text = rx.sub(sub, text)
         if n:
-            _atomic_write(f, new)
+            _atomic_write(f, new_text)
             total += n
     return total
+
+
+def rename_in_transcripts(old_label: str, new_label: str, rec_dir=None) -> int:
+    """Visose rodomose transkripcijose (įrašų + sekamų aplankų) kalbėtoją old_label pakeisti new_label (tik kalbėtojo
+    vietoje, ne tekste). Rašoma atomiškai. Grąžina pakeistų eilučių skaičių."""
+    return _rewrite_speakers(_speaker_re(old_label), lambda m: new_label, rec_dir)
+
+
+_PENDING_LABEL = re.compile(r"^(\[\d+:\d\d:\d\d\]\s+)" + re.escape(UNKNOWN) + r"(nez\d+)(?=:)", re.M)
+
+
+def apply_assigned(rec_dir=None) -> int:
+    """Jau priskirtus nežinomus (assigned.json) pritaikyti visiems tekstams: „Kolega?nezN" -> vardas / „Tu" /
+    „Kolega?" (triukšmas). Pataiso tekstus, kurių priskyrimas nepasiekė (sekamų aplankų tekstai iki 2026-10-25;
+    tekstas, kuris tuo metu buvo perrašomas). Dar laukiantys nekeičiami. -> pakeistų eilučių skaičius."""
+    assigned = load_assigned()
+    if not assigned:
+        return 0
+    waiting = {p.id for p in list_pending()}
+
+    def repl(m):
+        pid = m.group(2)
+        if pid in waiting or pid not in assigned:
+            return None
+        return assigned[pid] or UNKNOWN
+    return _rewrite_speakers(_PENDING_LABEL, repl, rec_dir)
 
 
 def line_span(path, idx: int, max_sec: float = 20.0):
@@ -379,7 +497,7 @@ def relabel_line(path, idx: int, old: str, new: str) -> bool:
 def text_speakers(rec_dir=None) -> set:
     """Vardai, kurie yra tekstuose (be „Tu" ir „Kolega?…") — vardų užbaigimui Apmokymuose."""
     out = set()
-    for f in sessions.text_files(Path(rec_dir or paths.RECORDINGS)):
+    for f in transcript_files(rec_dir):
         try:
             text = f.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -391,22 +509,23 @@ def text_speakers(rec_dir=None) -> set:
     return out
 
 
-def occurrences(label: str, rec_dir=None) -> list:
-    """Kur kalbėjo šis kalbėtojas: [(transkripcijos failas, „H:MM:SS", tekstas)], sena -> nauja."""
-    return occurrences_many([label], rec_dir)[label]
+def occurrences(label: str, rec_dir=None, with_idx: bool = False) -> list:
+    """Kur kalbėjo šis kalbėtojas (įrašų ir sekamų aplankų tekstuose): [(transkripcijos failas, „H:MM:SS", tekstas)],
+    sena -> nauja; with_idx — dar ir eilutės nr. faile (4-as elementas: grojimui su kontekstu, line_span)."""
+    return occurrences_many([label], rec_dir, with_idx)[label]
 
 
-def occurrences_many(labels, rec_dir=None) -> dict:
-    """Kaip occurrences, bet keliems kalbėtojams vienu failų perėjimu: {label: [(failas, laikas, tekstas)]}."""
+def occurrences_many(labels, rec_dir=None, with_idx: bool = False) -> dict:
+    """Kaip occurrences, bet keliems kalbėtojams vienu failų perėjimu: {label: [(failas, laikas, tekstas[, nr.])]}."""
     want = set(labels)
     out = {lb: [] for lb in labels}
-    for f in sessions.text_files(Path(rec_dir or paths.RECORDINGS)):
+    for f in transcript_files(rec_dir):
         try:
             lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        for ln in lines:
+        for i, ln in enumerate(lines):
             p = sessions.parse_line(ln)
             if p and p[1] in want:
-                out[p[1]].append((f, p[0], p[2]))
+                out[p[1]].append((f, p[0], p[2], i) if with_idx else (f, p[0], p[2]))
     return out

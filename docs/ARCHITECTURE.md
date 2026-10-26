@@ -37,11 +37,11 @@ Visi keliai apibrėžti **vienoje vietoje**: `diktatura/paths.py` (Python, tik s
 | Įrašai, tekstai | `~/.local/share/diktatura/recordings/` (+ `<bazė>.peaks` — 🌊 banga, `<tekstas>.prev` — prieš „🔁 iš naujo") | `DIKTATURA_DATA` (visai duomenų šakniai) |
 | Sekamų aplankų tekstai | `~/.local/share/diktatura/sources/<id>/<failas>.{named.txt,peaks,src.json,skip}` (garsas — tavo aplanke) | ↑ |
 | Sekami aplankai | `~/.config/diktatura/sources.json` | `DIKTATURA_CONFIG_DIR` |
-| Balsai | `~/.local/share/diktatura/speakers/{enroll.json,owner.json,pending/,ignored.json,assigned.json}` | ↑ |
+| Balsai | `~/.local/share/diktatura/speakers/{enroll.json,owner.json,pending/,ignored.json,assigned.json}`; kešai — `{suggestions,profiles}.json` (💡 pertikrinimas) | ↑ |
 | Žymės (⭐/☐), statistikos nunulinimas | `~/.local/share/diktatura/{annotations,stats_reset}.json` | ↑ |
 | Modeliai | `~/.local/share/diktatura/models/{azuolas-ct2,diarization,hf}` | ↑ |
-| Logai, transkripcijų trukmės (prognozei) | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log`, `timing.json` | `DIKTATURA_STATE` |
-| Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,rec-toggle.pid,asr.sock,pause,progress/}` | `DIKTATURA_RUN` |
+| Logai, transkripcijų trukmės (prognozei), būsenos žymės | `~/.local/state/diktatura/{autorecord,transcribe,debug}.log`, `timing.json`, `off.json` (`make off`), `quit.json` (ikonos „Išeiti") | `DIKTATURA_STATE` |
+| Runtime | `$XDG_RUNTIME_DIR/diktatura/{recording,transcribe.lock,window.lock,rec-toggle.pid,asr.sock,pause,progress/}` | `DIKTATURA_RUN` |
 
 Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duomenys nepaliečiami.
 
@@ -61,7 +61,7 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   ASR moduliai priima `--out` (ir mono `--srt`).
 - **`diktatura.progress`** (stdlib; ⏳ langelis, ikonos meniu, `make progress`): KAS vyksta — iš procesų
   (`transcribe-file.sh <failas>`: vaikas `flock` = laukia eilėje, kitaip vykdomas; `transcribe-pending.sh` — jo dar
-  nepaleisti failai), tik tos pačios aplinkos (`/proc/<pid>/environ` → tas pats `<runtime>` = ta pati eilė); EIGA —
+  nepaleisti failai; su `--sources` — tik sekamų aplankų, įrašų katalogo failai lieka „laukia naktinio"), tik tos pačios aplinkos (`/proc/<pid>/environ` → tas pats `<runtime>` = ta pati eilė); EIGA —
   `<runtime>/progress/<bazė>.json`, kurį rašo ASR modulis (`Reporter`: etapai `prep → vad → load → asr_me → asr_them →
   names`, mono `vad → load → asr`; Whisper etapuose — kiek kanalo garso apdorota, po kiekvieno segmento, ≤ 1 kartą/s;
   `pos` — iki kur ORIGINALAUS įrašo (VAD apkarpymas atstatytas) ir `peaks` — bangos failas: `processed_secs()` /
@@ -78,6 +78,7 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   ASR / ffmpeg (bash baigia pats: „garsas paliktas"; laikini `diktatura-asr-<pid>-*` išvalomi), `stop_all()` — dar
   naktinį ciklą ir laukiančius (bash PIRMA, tada jo `flock` — kitaip bash eitų toliau be užrakto). ASR serverio darbo
   nutraukti negalima (mygtukas pilkas). ASR moduliai SIGTERM verčia `SystemExit` (sutvarko laikinus failus).
+  `now_lines()` / `--now` — `make status` „Vyksta dabar" (bet koks failas, ne tik `slack|vox|rec_*`; + „⏻ išjungta").
 - **`diktatura.cleanup`** (stdlib; Nustatymai → Archyvas → `AUDIO_CLEANUP`): trina tik **garsą** (`*.wav`, `*.mp3`;
   wav+mp3 su ta pačia baze — vienas įrašas), tekstai lieka. `off` / `age` (senesnis nei `AUDIO_KEEP_DAYS`, laikas iš
   failo vardo) / `size` (kol `recordings/` failai — garsas + tekstai, be pakatalogių — > `AUDIO_MAX_GB`, trinami
@@ -150,11 +151,22 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   (`store.relabel_line`) ir fone paleidžia `teach <tekstas> <eilutė> <vardas|Tu>`: eilutės atkarpa (iki kitos eilutės,
   ≤ 20 s) iš wav/mp3, R kanalas jei jame yra kalbos (kitaip L), tik kalba (VAD) → embedding → `enroll.json` arba
   `owner.json`. Išėjimo kodai: 0 išmokta, 3 per mažai kalbos (< 1.5 s), 2 nėra garso/eilutės.
+- `diktatura.speakers.suggest` (.venv): **pertikrinimas pagal išmoktus** (Apmokymų „🔄"): kiekvienas laukiantis balsas
+  → `judge`: registruoti + „Tu" (`ranked`/`decide`) — užtikrintas (kaip transkripcijoje: `SPEAKER_THRESHOLD` +
+  `SPEAKER_MARGIN`) arba pasiūlymas (≥ `SPEAKER_SUGGEST`, bent `store.SUGGEST_MARGIN` virš antro); jei vardas netinka —
+  „ne žmogus" (`ignored.json`). Balsui su ≥ 2 eilutėmis — **profilis** iš visų jo eilučių kalbos (≤ 8 eil., ≤ 30 s;
+  stereo — R, mono — 0 kanalas; VAD), kešas `profiles.json` (raktas — kurios eilutės). Rašo `suggestions.json`
+  (`started`, `voices` — `store.voices_signature()`, slenksčiai, `checked`, `items`), spausdina „profiliai k/n" ir JSON
+  santrauką. Vardų nekeičia. Pasenę (`store.suggestions_stale`): kiti slenksčiai, pasikeitęs ar ištrintas
+  `enroll`/`owner`/`ignored.json`, netikrintas laukiantis.
 - `diktatura.speakers.store` (**tik stdlib** — naudoja ir UI): `enroll.json`, `owner.json` (tavo balsas, paskutiniai
   40 pavyzdžių), `pending/` (id niekada nekartojami — `pending/.next`), `ignored.json`, `assigned.json`;
-  `assign` (vardas „Tu" → `assign_owner`) / `discard` / `rename_speaker` / `relabel_line` ir **retroaktyvus
-  pervadinimas tekstuose** (`Kolega?nezN` → vardas, tik kalbėtojo vietoje). `resolve_labels` — jei vardas priskirtas
-  transkripcijos metu, nauja transkripcija pasitaiso.
+  `assign` (vardas „Tu" → `assign_owner`; `learn=False` — be mokymosi) / `assign_many` (užtikrinti pasiūlymai) /
+  `discard` / `rename_speaker` / `relabel_line` ir **retroaktyvus pervadinimas tekstuose** (`Kolega?nezN` → vardas,
+  tik kalbėtojo vietoje) **visuose** tekstuose — įrašų ir sekamų aplankų (`transcript_files`; taip pat
+  `occurrences_many`, `text_speakers`). `apply_assigned` — pagal `assigned.json` pritaiko senus priskyrimus (pataiso
+  tekstus, kurių priskyrimas nepasiekė). `resolve_labels` — jei vardas priskirtas transkripcijos metu, nauja
+  transkripcija pasitaiso. `load_suggestions` / `suggestions_stale` — 💡 pasiūlymų skaitymas (stdlib, UI).
 - `diktatura.asr.dialog` (stdlib): de-dup ir eilučių formatavimas; `diktatura.sessions` (stdlib): įrašų vardai/datos,
   rodomi tekstų failai, `[H:MM:SS] Kas: tekstas` eilutės.
 - `diktatura.speakers.{enroll,diarize,recluster,name_clusters}`: registracijos ir diarizacijos įrankiai
@@ -172,8 +184,10 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   vyksta `diktatura.asr.*` arba mp3 konversija = 🟡, kitaip ⚪ (`compute_state` — gryna funkcija). Kol yra nežinomų
   balsų (`speakers/pending/`) — **pulsuoja** (pilna ↔ `*-dim.png` tos pačios spalvos, ~1 s; `icon_name()`).
   Meniu: „⚙ Nustatymai" (viršuje), „🎓 Apmokymai paruošti (N)" (kai yra), „📄 Rodyti nuskaitytą tekstą", „⏳ 43 % · liko …" (kol transkribuojama — eigos langelis), būsena,
-  režimas, įrašų aplankas, „Išeiti" (uždaro tik ikoną — įrašymo servisas veikia toliau; grąžinti: doko
-  „Diktatūra" arba `make tray-on`). **Vidurinis klik → Nustatymai.** Ubuntu AppIndicator paspaudus visada atidaro
+  režimas, įrašų aplankas, „Išeiti" — **išjungia Diktatūrą** (`services.quit_app`, žr. žemiau): kol transkribuojama,
+  užrašas „Išeiti (sustabdys transkripciją)" ir klausimas su failu / kiek liko (numatytasis „Atšaukti"); įrašymo
+  režimas nekeičiamas. Grąžinti: doko „Diktatūra" arba `make tray-on` — `main()` nuima žymę `quit.json`.
+  **Vidurinis klik → Nustatymai.** Ubuntu AppIndicator paspaudus visada atidaro
   meniu — langas tiesiai neatsidaro, todėl Nustatymai meniu viršuje. Testams `Tray(indicator=…, opener=…)`.
   **💊 Įrašymo indikatorius** (`ui.pill`, `REC_PILL`; ikonos procese, laikmatis 100 ms): kol `<runtime>/recording`
   rodo įrašą ≥ 1.5 s — POPUP langelis apačioje dešinėje: 🔴, šaltinis, laikmatis, gyva abiejų kanalų banga (8 s).
@@ -217,10 +231,21 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
     Sekamo aplanko skirtukas: viršuje aplankas, failų / tekstų / laukia, „🔄 Transkribuoti dabar"
     (`transcribe-pending.sh --sources`, atskirai), „📂 Atidaryti"; antraštėse — aplanko pavadinimas; žymių raktas
     `<id>/<failas>` (skirtingų aplankų failų vardai gali sutapti).
-  - `ui.training_page` (🎓 Apmokymai): pending sąrašas + kontekstas (`store.occurrences_many`), ▶ grojimas
-    (`paplay`; testams `DIKTATURA_PLAYER`), vardas su autocomplete → `store.assign`; „🙋 Tai aš" → `store.assign_owner`;
-    „Ne žmogus" → `store.discard`; registruoti balsai: tavo balsas (pamiršti) + kolegos: pervadinti/sujungti/pamiršti.
-    Po pakeitimų perpiešia Teksto skiltį.
+  - `ui.training_page` (🎓 Apmokymai): pending sąrašas + kontekstas (`store.occurrences_many(with_idx)`), ▶ pavyzdys
+    (`paplay`; testams `DIKTATURA_PLAYER`), **🔊 Įraše ±N s** — eilutės vieta originaliame įraše su paraštėmis
+    (`ui.player.command(…, dur)`, `store.line_span`; spragtelėjus „Ką sakė" eilutę — ji), vardas su autocomplete →
+    `store.assign`; „🙋 Tai aš" → `store.assign_owner`; „Ne žmogus" → `store.discard`. **🔄 Pertikrinti pagal
+    išmoktus** — `store.apply_assigned` + fone `speakers.suggest` (eiga iš jo išvesties); savaime — atidarius skiltį,
+    jei `suggestions_stale`, ir po kiekvieno priskyrimo; baigus — `reload(keep_current=True)` (grojimas ir ranka
+    įvestas vardas nepaliečiami). 💡 sąraše ir detalėse, vardas laukelyje (Enter); „✔ Priimti užtikrintus" →
+    `store.assign_many`. Rikiavimas: pasiūlymai pirma / dažniausi / pagal laiką. **Klaviatūra** (`on_key`, kviečia
+    `MainWindow._on_key` lango lygiu — veikia ir rašant vardą): Ctrl+Tarpas — groti / stabdyti pavyzdį
+    (`toggle_play`; pavyzdžio nėra — vieta įraše), Ctrl+Shift+Tarpas — vieta įraše; žymeklis → vardo laukelis
+    (`focus_name`: pasiūlymas pažymėtas, ranka pradėtas — tęsiamas). Enter (`on_enter`) — įrašyti ir kitas groja pats
+    (`_after_change(play=True)`, taip pat „Ne žmogus", „Tai aš", ◀ / ▶ / praleisti); tuščias Enter — praleisti.
+    Autocomplete `match-selected` Enter klavišu (`enter_pressed()`) — iškart `assign` (pele — tik įrašo į laukelį;
+    inline completion sąmoningai išjungta — „Ona" virstų „Onute"). Registruoti balsai: tavo balsas
+    (pamiršti) + kolegos: pervadinti/sujungti/pamiršti, „💡 panašių laukia: N". Po pakeitimų perpiešia Teksto skiltį.
   - `ui.progress_dialog` (⏳ Transkripcija; Teksto mygtukas — jo užrašas kas 2 s „43 % · liko ~1 val. · eilėje 4",
     ikonos meniu punktas, `app --progress`): modalinis kaip 📊 Statistika; dvi juostos (failas / visa eilė), praėjęs,
     likęs, pabaiga laikrodžiu, eilės lentelė su prognozėmis, sulėtėjimo pastaba; „⏭ Praleisti šį" / „⏹ Sustabdyti
@@ -270,6 +295,13 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   aplankai, ASR serveris, ikona) + `stop` vykstantiems oneshot'ams, langas uždaromas per D-Bus (`gdbus` → Gtk.Application
   veiksmas `quit`). Kas buvo įjungta — `<state>/off.json`; `make on` grąžina būtent tai (be failo — paleidžia tai, kas
   enabled) ir failą ištrina. Antras `make off` iš eilės įsimintos būsenos neperrašo. `doctor` primena „make on".
+  **Ikonos „Išeiti"** (`quit_app()`): žymė `<state>/quit.json`, langas uždaromas (D-Bus `quit`), `progress.stop_all()`
+  + `stop` oneshot'ams. Kol žymė yra ir langas neatidarytas, `transcription_blocked()` = `bin/common.sh app_quit`:
+  `transcribe-pending.sh` (naktinis, sekami aplankai) ir `transcribe-file.sh` (po įrašo; tikrina ir po laukimo eilėje)
+  nieko nepradeda (failas lieka be teksto). Atidarytas langas laiko `<runtime>/window.lock` (`hold_window_lock()`,
+  `window_open()` — flock patikra; nulūžus užraktas dingsta pats) → transkribuoti galima, eiga matosi lange; uždarant
+  langą su vykstančia transkripcija, kai Diktatūra išjungta, — klausiama ir sustabdoma (`MainWindow.confirm_close`).
+  `make transcribe-pending` žymę ignoruoja (`DIKTATURA_IGNORE_QUIT=1` — eiga matosi terminale). `doctor` — ⚠ „make tray-on".
 - **Balsų atsarginė kopija** (`diktatura.backup`, stdlib): `speakers/*.json` + `pending/` → `<duomenys>/backups/
   voices-<data>.tar.gz` (laikoma 10; tą pačią sekundę — `-2`, rikiuojama pagal mtime). `make backup-voices` /
   `backups` / `restore-voices [F=]` (prieš atkūrimą — dabartinių kopija), Nustatymų mygtukas, ir AUTOMATIŠKAI
@@ -361,6 +393,13 @@ Testai ir eksperimentai nustato šiuos env į laikinus katalogus — realūs duo
   studijos, laikrodžio, telefono įrašai analizuojami atskirai (skirtukai). Garsas nekopijuojamas (vieta diske) ir
   nekeičiamas — sinchronizuojami aplankai gali grįžti į telefoną. Vietoj vienkartinio „📥 įkelti failą" (Etapo 13 4
   punktas) — sekami aplankai: įkelti = įmesti failą į aplanką.
+- **💡 Pasiūlymai, ne automatinis pervadinimas (2026-10-25):** matuota savininko susirinkimo įraše („palik vieną" su
+  jau įvardintais balsais): fragmentai trumpi (mediana 1.6 s), įprastu slenksčiu 0.5 nė vienas iš 392 laukiančių netiko;
+  0.4 slenksčiu ~3 iš 4 pasiūlymų teisingi — per mažai automatiniam pervadinimui, bet gerai „paklausyk ir Enter".
+  Automatiškai priimami tik užtikrinti (tokius transkripcija atpažintų pati), ir tik paspaudus. Triukšmo pavyzdžiai
+  lyginami tik kai vardas netinka: kartu su vardais jie nustelbia žmones (teisingų liko 2 iš 50). Balso profilis iš
+  visų eilučių pakėlė teisingų dalį 75 % → 83 %; registruoti balsai lieka trumpi pavyzdžiai (ilgą lyginant su ilgais —
+  daugiau pasiūlymų, bet teisingų tik 75 %).
 - **Užpildai taisyklėmis, ne LLM:** LLM anksčiau atmestas (privatumas, RAM); tikruose tekstuose dažniausi „nu" (852),
   „žinai" (509), „tipo" (163), „mhm", „e/ee", „aaa" — šnekos garsai valomi visada, kalbos žodžiai — tik pasirinkti
   („žinai" dažnai prasmingas).
@@ -418,6 +457,20 @@ Intel i7-1165G7 (4C/8T), **be CUDA** (tik Iris Xe), 15 GB RAM (dažnai įtempta,
   anksčiau; poslinkis pastovus per vieną VOX paleidimą, bet kinta tarp paleidimų). Kanalų laikų nelyginti tiesiogiai:
   de-dup turi 2 s atsargą, aido šalinimas poslinkį skaičiuoja pats.
 - **`pending/.next` po `flock`:** nežinomus balsus vienu metu gali kurti transkripcija ir `make speakers-relabel`.
+- **Tekstai yra DVIEJOSE vietose** — `recordings/` ir `sources/<id>/`. Iki 2026-10-25 `store` perėjimai ėjo tik per
+  `recordings/`: sekamo aplanko balsams Apmokymuose rodė „0 kart. · 0 sesij.", o priskirti vardai tų tekstų nepasiekė
+  (susirinkime ~400 eilučių liko „Kolega?nezN"). Naujas perėjimas per tekstus — tik `store.transcript_files()`;
+  `apply_assigned` atitaiso senus. (`speakers.relabel` sąmoningai tik `recordings/` — jam reikia stereo.)
+- **Nematoma transkripcija po „Išeiti" (2026-10-26):** sekamo aplanko „Transkribuoti dabar" paleido 1 val. 13 min
+  įrašą (`systemd-run` — atskiras cgroup, kad uždarius langą neužmuštų), po 2 min ikona uždaryta „Išeiti" (tada —
+  tik ikona), langas taip pat; transkripcija dar ~2,5 val. ėjo be jokio ženklo, o `make status` „Vyksta dabar" buvo
+  tuščias (rodė tik `slack|vox|rec_*` failų vardus). Dabar „Išeiti" = Diktatūra išjungta (žr. `services.quit_app`),
+  „Vyksta dabar" — iš `progress`. Ta pati eiga rodė „eilėje 234 · liko ~4 val. 39 min": `--sources` paleidimui
+  priskaičiuodavo VISUS įrašus be teksto (234, laukiančius naktinio), nors jis daro tik aplankus — dabar ne.
+  Dėl to paties įvykio — **pervadintas sekamo aplanko failas transkribuojamas iš naujo**: tekstai susieti su failo
+  vardu (`sources/<id>/<failas>.named.txt`), tad „Recording 25.wav" → „Susitikimas 20261024.wav" (tas pats įrašas)
+  = naujas failas be teksto, vėl ~2,5 val. CPU ir dar ~100 „naujų" nežinomų balsų. Kol nesutvarkyta: pervadinus
+  pervadink ir tekstą (`.named.txt`, `.peaks`, `.src.json` „audio" kelią) arba nepervadinėk.
 - **Testų LT fixture'ai — vienas kalbėtojas** (Common Voice klipai) — „skirtingų žmonių" testams netinka.
 - **PyGObject + savas Gtk.Container (`WrapBox`):** jei Python nuorodos į objektą nėra, jo Python dalis (`_children`)
   dingsta — GTK naikindamas langą sukosi be galo (testai „pakibdavo"). Todėl `WrapBox._live` laiko objektus iki

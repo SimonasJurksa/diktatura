@@ -66,6 +66,8 @@ VAD_TRIM=0
 SPEAKER_THRESHOLD=0.5
 # vardas rašomas tik jei balsas bent tiek panašesnis į tą žmogų nei į kitą (ir į tave); kitaip „Kolega?"
 SPEAKER_MARGIN=0.1
+# Apmokymų „Pertikrinti": nuo kokio panašumo laukiančiam balsui siūlyti žinomą vardą (💡, patvirtini pats)
+SPEAKER_SUGGEST=0.4
 
 # ── Archyvas ──
 # 1 = tuščią tekstą ir jo garsą iškart ištrinti

@@ -6,6 +6,8 @@
 # failai nekeičiami (bin/transcribe-file.sh <garsas> <išvesties bazė>).
 #   --sources       tik sekami aplankai (diktatura-sources.timer kas ~2 min; be įrašų katalogo)
 #   --if-immediate  nieko nedaryti, jei MODE ne „immediate" arba AUTOTRANSCRIBE=0 (timer'is — tik „iškart" režimui)
+# Diktatūra išjungta ikonos „Išeiti" (ir langas neatidarytas) — nieko nedaro (common.sh app_quit): transkripcija būtų
+# nematoma. make transcribe-pending (DIKTATURA_IGNORE_QUIT=1) — vis tiek transkribuoja (eiga matosi terminale).
 # Pabaigoje — seno garso valymas pagal nustatymus (diktatura.cleanup; kas naktį, net jei transkribuoti nebuvo ką).
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/common.sh"
@@ -21,6 +23,10 @@ for a in "$@"; do
 done
 if [ "$IF_IMMEDIATE" = 1 ] && { [ "${AUTOTRANSCRIBE:-1}" != 1 ] || [ "${MODE:-immediate}" != immediate ]; }; then
   exit 0
+fi
+if app_quit; then
+  [ "$SOURCES_ONLY" = 1 ] || log "Diktatūra išjungta (ikonos „Išeiti“) — transkripcija neprasideda, kol vėl neįjungsi (programų meniu / make tray-on)."
+  exit 0                                    # sekami aplankai (kas 2 min) — tyliai
 fi
 
 # Būsenos faile: "<šaltinis> <rašomo failo kelias>"

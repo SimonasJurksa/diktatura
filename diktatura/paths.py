@@ -58,6 +58,8 @@ STATE_RECORDING = RUN_DIR / "recording"        # yra = šiuo metu rašoma (ikona
 TRANSCRIBE_LOCK = RUN_DIR / "transcribe.lock"
 PROGRESS_DIR = RUN_DIR / "progress"             # <bazė>.json — vykdomos transkripcijos eiga (diktatura.progress)
 TIMING = STATE_DIR / "timing.json"              # paskutinių transkripcijų etapų trukmės — prognozei
+QUIT_FILE = STATE_DIR / "quit.json"             # ikonos „Išeiti": Diktatūra išjungta -> transkripcijos neprasideda
+WINDOW_LOCK = RUN_DIR / "window.lock"           # užraktą laiko atidarytas langas (diktatura.services.window_open)
 
 # Kodas
 ICONS = REPO / "icons"

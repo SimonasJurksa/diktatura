@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Diktatūra — paleidimas iš programų meniu / doko (desktop/diktatura.desktop.in):
-# grąžina status bar ikoną (jei buvo uždaryta „Išeiti") ir atidaro langą (jau atidarytą — tik iškelia).
+# grąžina status bar ikoną (jei buvo uždaryta „Išeiti" — jos paleidimas vėl leidžia transkripcijas) ir atidaro langą
+# (jau atidarytą — tik iškelia).
 #   bin/diktatura-open.sh [text|training|settings]
 # Įrašymo režimo nekeičia (jis — Nustatymuose). Testams: DIKTATURA_SYSTEMCTL, DIKTATURA_UI_PYTHON.
 set -uo pipefail

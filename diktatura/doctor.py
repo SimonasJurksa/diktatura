@@ -168,6 +168,10 @@ def check_services(cfg: dict) -> list:
     off = services.power_state()
     if off:
         out.append(R(WARN, f"Diktatūra išjungta su make off ({off.get('at', '?').replace('T', ' ')})", "make on"))
+    q = services.quit_state()
+    if q is not None:
+        out.append(R(WARN, f"Diktatūra išjungta ikonos „Išeiti“ ({str(q.get('at', '?')).replace('T', ' ')}) — "
+                           "transkripcijos neprasideda", "make tray-on  (arba atidaryk Diktatūrą iš programų meniu)"))
     mode = services.recorder_mode()
     out.append(R(OK, f"įrašymo režimas: {services.MODE_LABELS[mode].split(' — ')[0]}") if mode != "off" else
                R(WARN, "įrašymas išjungtas (nė vienas režimas neveikia)", "make mode-vox  arba  make mode-slack"))

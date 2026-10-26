@@ -44,6 +44,7 @@ DEFAULTS = {
     "VAD_TRIM": ("0", "bool", "VAD (kalbos filtras)"),
     "SPEAKER_THRESHOLD": ("0.5", "float", "Kalbėtojai", 0.3, 0.95),
     "SPEAKER_MARGIN": ("0.1", "float", "Kalbėtojai", 0, 0.5),
+    "SPEAKER_SUGGEST": ("0.4", "float", "Kalbėtojai", 0.2, 0.9),
     "DELETE_EMPTY": ("1", "bool", "Archyvas"),
     "ARCHIVE_MP3": ("1", "bool", "Archyvas"),
     "ARCHIVE_KBPS": ("64", "int", "Archyvas", 16, 320),

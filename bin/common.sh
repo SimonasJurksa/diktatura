@@ -21,11 +21,23 @@ LOG_TRANSCRIBE="$STATE_DIR/transcribe.log"
 LOG_DEBUG="$STATE_DIR/debug.log"
 STATE_RECORDING="$RUN_DIR/recording"
 TRANSCRIBE_LOCK="$RUN_DIR/transcribe.lock"
+QUIT_FILE="$STATE_DIR/quit.json"
+WINDOW_LOCK="$RUN_DIR/window.lock"
 PY="$REPO/.venv/bin/python"
 
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HOME="$MODELS/hf"
 mkdir -p "$CONFIG_DIR" "$RECORDINGS" "$STATE_DIR" "$RUN_DIR"
+
+# Diktatūra išjungta ikonos „Išeiti" (yra $QUIT_FILE) ir langas neatidarytas -> transkripcija būtų nematoma, todėl
+# neprasideda (diktatura.services.transcription_blocked — tas pats Python'e). Žymę nuima ikonos paleidimas.
+# Kol atidarytas langas (laiko $WINDOW_LOCK) — galima. DIKTATURA_IGNORE_QUIT=1 — make transcribe-pending (terminale matosi).
+app_quit() {
+  [ -f "$QUIT_FILE" ] || return 1
+  [ "${DIKTATURA_IGNORE_QUIT:-0}" = 1 ] && return 1
+  if [ -e "$WINDOW_LOCK" ] && ! flock -n "$WINDOW_LOCK" true 2>/dev/null; then return 1; fi
+  return 0
+}
 
 # Nustatymai: pirma numatytieji, tada vartotojo (perrašo). Kviesti kiekvieną kartą prieš sprendimą — gyvai.
 load_config() {

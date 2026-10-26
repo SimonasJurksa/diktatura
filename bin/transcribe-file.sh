@@ -36,11 +36,16 @@ log(){ echo "$(date '+%F %T') $*" | tee -a "$LOG_TRANSCRIBE"; }
 LOWPRIO="nice -n 19"
 command -v ionice >/dev/null 2>&1 && LOWPRIO="ionice -c 3 nice -n 19"
 
+# Diktatūra išjungta ikonos „Išeiti" (ir langas neatidarytas) — transkripcija būtų nematoma: nepradedam (failas lieka
+# be teksto — padarys, kai vėl įjungsi). Tikrinama ir po laukimo eilėje: „Išeiti" galėjo būti paspaustas tuo metu.
+quit_skip(){ app_quit || return 1; log "PRALEISTA — Diktatūra išjungta (ikonos „Išeiti“), transkribuos vėliau: $(basename "$IN")"; }
+quit_skip && exit 0
 # EILĖ: tik VIENA transkripcija vienu metu (Ąžuolas ~3.3 GB — dvi lygiagrečiai = OOM / capture badavimas).
 exec 9>"$TRANSCRIBE_LOCK"
 if ! flock -n 9; then
   log "EILĖJE (laukia ankstesnės transkripcijos): $(basename "$IN")"
   flock 9
+  quit_skip && exit 0
 fi
 # seno garso valymas — po kiekvienos transkripcijos, dar laikant eilės užraktą (dvi valymo kopijos nesusidurs)
 # ⏭ „Praleisti" (diktatura.progress.skip_current) palieka žymę <runtime>/skip/<šio bash pid> ir nužudo vaikus;

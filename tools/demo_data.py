@@ -5,7 +5,7 @@
     DIKTATURA_DATA=/tmp/demo/data DIKTATURA_CONFIG_DIR=/tmp/demo/cfg python3 -m diktatura.ui.app --page training
 
 Sukuria transkripcijas (šiandien/vakar) su sintetinėmis bangomis (.peaks), du nežinomus balsus (pending: sintetinis
-garsas) ir registruotus vardus.
+garsas), registruotus vardus ir 💡 pasiūlymą (suggestions.json — kaip po „🔄 Pertikrinti").
 Saugiklis: atsisako rašyti, jei DIKTATURA_DATA nenurodytas (kad neužterštų tikrų duomenų).
 """
 import json
@@ -110,6 +110,13 @@ def main():
             "embedding": emb(), "src": f"{src[0]}_{src[1]:%Y%m%d_%H%M%S}",
             "added": (src[1] + timedelta(minutes=5)).isoformat()}), encoding="utf-8")
     (paths.PENDING / ".next").write_text("3")
+    # 💡 pasiūlymas (kaip po „🔄 Pertikrinti"): nez2 panašus į Joną; dabartinis balsų parašas — neperskaičiuojamas
+    store._atomic_write(store.suggestions_file(), json.dumps({
+        "started": datetime.now().timestamp(), "voices": store.voices_signature(), "threshold": 0.5, "margin": 0.1,
+        "suggest": 0.4,
+        "checked": ["nez1", "nez2"], "items": {"nez2": {"name": "Jonas", "sim": 0.47, "alt": "Ona", "alt_sim": 0.36,
+                                                         "strong": False, "basis": "sample", "lines": 1}}},
+        ensure_ascii=False))
     print(f"✓ demo duomenys: {paths.DATA_DIR}")
 
 

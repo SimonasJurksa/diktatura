@@ -4,7 +4,8 @@ KAS VYKSTA — iš procesų (ne iš atskirų „eilės" failų: nulūžę ar nu�
   bin/transcribe-file.sh <failas> — vienas darbas; jo vaikas `flock` = laukia eilėje, kitaip — vykdomas
   (palikuonis diktatura.asr.transcribe* — transkribuoja, ffmpeg libmp3lame — archyvuoja, diktatura.asr.client — ASR
   serveryje). Skaičiuojami tik šios aplinkos darbai (tas pats <runtime> katalogas = ta pati eilė).
-  bin/transcribe-pending.sh (naktinis / make transcribe-pending) — jo dar nepaleisti failai rodomi kaip laukiantys.
+  bin/transcribe-pending.sh (naktinis / make transcribe-pending) — jo dar nepaleisti failai rodomi kaip laukiantys
+  (su --sources — tik sekami aplankai: įrašų katalogo failai jo eilėje nėra, lieka „laukia naktinio").
 EIGA — <runtime>/progress/<bazė>.json, kurį rašo ASR modulis (Reporter): etapas, kiek jo atlikta, garso / kalbos s.
 PROGNOZĖ — kiek šis kompiuteris užtrunka (<state>/timing.json: paskutinės transkripcijos, etapų trukmės ir garso /
   kalbos kiekiai -> greičiai, kaip sumų santykis — ilgi įrašai sveria daugiau) × šio failo garso / kalbos trukmė.
@@ -14,7 +15,7 @@ BENDRA EIGA (kaip Midnight Commander kopijuojant): praėjęs laikas nuo serijos 
   iš eilės (tarpai < BATCH_GAP) baigtos transkripcijos timing.json + dabartinė.
 STABDYMAS: skip_current() — nutraukia vykdomo darbo ASR / ffmpeg (failas lieka be teksto -> naktinis), eilė tęsiasi;
   stop_all() — dar ir naktinį ciklą bei laukiančius eilėje (bash pirma, tada jo `flock`, kad neitų toliau be eilės).
-CLI: python3 -m diktatura.progress   (make progress)
+CLI: python3 -m diktatura.progress   (make progress);  --now — trumpai (make status „Vyksta dabar")
 """
 import json
 import os
@@ -492,16 +493,16 @@ def audio_info(path: Path):
     return res
 
 
-def pending_files(exclude=()) -> list:
+def pending_files(exclude=(), rec: bool = True, src: bool = True) -> list:
     """Įrašai be teksto (kaip transcribe-pending.sh): {slack,vox,rec}_*.wav be .named.txt/.txt/... ir be .skip, tada
-    sekamų aplankų (diktatura.sources) laukiantys failai."""
+    sekamų aplankų (diktatura.sources) laukiantys failai. rec / src — kuriuos imti (--sources — tik aplankai)."""
     try:
         active = Path(paths.STATE_RECORDING.read_text().split(maxsplit=1)[1].strip())
     except (OSError, IndexError):
         active = None
     ex = {Path(e) for e in exclude}
     out = []
-    for f in sorted(paths.RECORDINGS.glob("*_*.wav")):
+    for f in sorted(paths.RECORDINGS.glob("*_*.wav")) if rec else ():
         if not any(f.name.startswith(src + "_") for src in sessions.SOURCES) or f in ex or f == active:
             continue
         base = f.with_name(sessions.base_name(f.name))
@@ -509,8 +510,9 @@ def pending_files(exclude=()) -> list:
                for s in (".named.txt", ".clean.dialog.txt", ".dialog.txt", ".txt", ".skip")):
             continue
         out.append(f)
-    from diktatura import sources
-    out += [a for a, _ in sources.all_pending() if a not in ex]
+    if src:
+        from diktatura import sources
+        out += [a for a, _ in sources.all_pending() if a not in ex]
     return out
 
 
@@ -553,13 +555,14 @@ def snapshot(now: float = None, procs: dict = None) -> Snapshot:
     kids = children_map(procs)
     run_dir = paths.RUN_DIR.resolve()
     mine = lambda pid: (_run_dir_of(pid) or Path("/nonexistent")).resolve() == run_dir   # noqa: E731
-    jobs, pend_pids = [], []
+    jobs, pend_pids, pend_kind = [], [], None      # pend_kind: None | "sources" (--sources) | "all" (naktinis)
     for p in procs.values():
         arg = _script_arg(p, "transcribe-file.sh")
         if arg and mine(p.pid):
             jobs.append((p, Path(arg)))
         elif _script_arg(p, "transcribe-pending.sh") is not None and mine(p.pid):
             pend_pids.append(p.pid)
+            pend_kind = "all" if pend_kind == "all" or "--sources" not in p.cmd else "sources"
     snap = Snapshot(now=now, pending_pids=pend_pids)
     hist = history()
     queued = []
@@ -610,18 +613,18 @@ def snapshot(now: float = None, procs: dict = None) -> Snapshot:
         j.total = el + j.left
         snap.batch_start, snap.batch_done = _batch_start(hist, j.start)
     # laukiantys: eilėje (bash) + naktinio sąrašas (dar nepaleisti)
-    if pend_pids:
+    if pend_kind:
         taken = {j.file for j in queued} | ({snap.running.file} if snap.running else set())
-        for f in pending_files(exclude=taken):
+        for f in pending_files(exclude=taken, rec=pend_kind == "all"):
             dur, ch = audio_info(f)
             queued.append(Job(pid=0, file=f, state="pending", phase="pending", audio_sec=dur,
                               kind="named" if ch == 2 else "mono"))
     for j in queued:
         j.left = j.total = estimate_job_total(j.kind, j.audio_sec, r, snap.slow)
     snap.queued = queued
-    if not pend_pids:
+    if pend_kind != "all":                           # --sources įrašų katalogo nedaro — jie laukia naktinio
         taken = {j.file for j in snap.jobs}
-        snap.waiting_night = pending_files(exclude=taken)
+        snap.waiting_night = pending_files(exclude=taken, src=pend_kind is None)
     if snap.running is None and queued:
         snap.batch_start = now
     return snap
@@ -686,6 +689,24 @@ def summary(snap: Snapshot) -> str:
     if snap.queued:
         s += f" · eilėje {len(snap.queued)}"
     return s
+
+
+def now_lines(snap: Snapshot = None) -> list:
+    """`make status` „Vyksta dabar": kas transkribuojama (ir sekamų aplankų failai — ne tik slack/vox/rec) ir ar
+    Diktatūra išjungta ikonos „Išeiti" (tada naujos transkripcijos neprasideda)."""
+    from diktatura import services
+    snap = snap or snapshot()
+    out = []
+    if snap.active:
+        head = f"⏳ transkribuojama: {snap.running.name}" if snap.running else "⏳ transkripcijų eilė"
+        out.append(f"{head} — {summary(snap)}")
+    q = services.quit_state()
+    if q is not None:
+        at = str(q.get("at", "")).replace("T", " ")[:16]
+        out.append(f"⏻ Diktatūra išjungta ikonos „Išeiti“{f' ({at})' if at else ''} — transkripcijos neprasideda"
+                   + (" (kol atidarytas langas — prasideda)" if services.window_open() else "")
+                   + "; įjungti: atidaryk Diktatūrą arba make tray-on")
+    return out
 
 
 def describe(snap: Snapshot) -> list:
@@ -817,6 +838,9 @@ def stop_all(snap: Snapshot = None) -> str:
 def main(argv=None) -> int:
     args = sys.argv[1:] if argv is None else argv
     snap = snapshot()
+    if "--now" in args:
+        print("\n".join(now_lines(snap)))
+        return 0
     if "--json" in args:
         print(json.dumps({"running": snap.running and snap.running.__dict__, "left": snap.left,
                           "queued": [j.__dict__ for j in snap.queued]}, default=str, ensure_ascii=False, indent=1))

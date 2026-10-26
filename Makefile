@@ -54,7 +54,7 @@ status: ## Bendra būsena (režimas, servisai, nustatymai, įrašai, RAM/diskas)
 	@echo "─ Nustatymai ─"; $(CFG) show
 	@echo "─ Vyksta dabar ─"; \
 	 if [ -f "$(RUN_DIR)/recording" ]; then echo "  🔴 įrašoma: $$(basename "$$(cut -d' ' -f2- "$(RUN_DIR)/recording")")"; fi; \
-	 (pgrep -af "diktatura[.]asr[.]" | grep -oE "(slack|vox|rec)_[0-9_]+\.(wav|mp3)" | sed 's/^/  ⏳ transkribuojama: /') || true; \
+	 (PYTHONPATH=$(REPO) /usr/bin/python3 -m diktatura.progress --now | sed '/./s/^/  /') || true; \
 	 echo "  (jei tuščia virš — nieko nevyksta)"
 	@echo "─ Įrašai ─"; $(MAKE) -s recordings
 	@echo "─ Resursai ─"; free -h | awk '/Mem/{printf "  RAM: %s laisva / %s\n",$$7,$$2}'; \
@@ -138,8 +138,8 @@ asr-server-off: ## Išjungti ASR serverį (kiekviena transkripcija krauna model�
 	@$(CFG) set ASR_SERVER=0 && $(SC) disable --now diktatura-asr 2>/dev/null; echo "ASR serveris išjungtas"
 
 ## ——— Transkripcija rankiniu būdu ———
-transcribe-pending: ## Sutranskribuoti VISUS įrašus be teksto dabar
-	@bash $(REPO)/bin/transcribe-pending.sh
+transcribe-pending: ## Sutranskribuoti VISUS įrašus be teksto dabar (net jei Diktatūra išjungta ikonos „Išeiti")
+	@DIKTATURA_IGNORE_QUIT=1 bash $(REPO)/bin/transcribe-pending.sh
 transcribe: ## Sutranskribuoti vieną failą:  make transcribe FILE=.../vox_xxx.wav
 	@test -n "$(FILE)" || { echo "Nurodyk FILE=..."; exit 1; }; bash $(REPO)/bin/transcribe-file.sh "$(FILE)"
 progress: ## ⏳ Kas transkribuojama, kiek liko (dabartinis failas ir visa eilė; langelis — Tekstas → „⏳ Transkripcija")

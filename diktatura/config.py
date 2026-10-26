@@ -115,6 +115,11 @@ SCHEMA = (
             "Vardas rašomas tik jei balsas bent tiek panašesnis į tą žmogų nei į kitą (taip pat ir į tave). "
             "Jei du balsai per panašūs — „Kolega?\" (geriau nežinomas nei klaidingas vardas). 0 — išjungta.",
             0, 0.5, step=0.05),
+    Setting("SPEAKER_SUGGEST", "float", "Kalbėtojai", "Pasiūlymų slenkstis (Apmokymuose)",
+            "Apmokymuose „🔄 Pertikrinti\": nuo kokio panašumo laukiančiam balsui pasiūlyti jau žinomą vardą (💡, "
+            "patvirtinama Enter). Mažesnis = daugiau pasiūlymų, bet daugiau klaidingų; vardai patys nekeičiami. "
+            "Užtikrintais laikomi tik tie, kurie siekia vardo slenksčio ir atsargos (kaip transkripcijoje).",
+            0.2, 0.9, step=0.05),
     # ── Archyvas ──
     Setting("DELETE_EMPTY", "bool", "Archyvas", "Trinti tuščius įrašus",
             "Jei transkripcijoje nėra teksto (triukšmas) — ištrinti ir garsą, ir tekstą."),

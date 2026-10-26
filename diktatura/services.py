@@ -3,6 +3,9 @@
 Įrašymo režimas = kuris įrašymo servisas aktyvus: vox (diktatura-vox), slack (diktatura-autorecord) arba off.
 Vienu metu — tik vienas (servisuose Conflicts=). Naktinis — diktatura-nightly.timer. Sekami aplankai (telefonas…) —
 diktatura-sources.timer (kas ~2 min, tik MODE=immediate); įjungiamas pridėjus pirmą aplanką (Nustatymai).
+Ikonos „Išeiti" (quit_app): Diktatūra išjungiama — vykstančios transkripcijos sustabdomos, langas uždaromas, o naujos
+(naktinis, sekami aplankai, po įrašo) neprasideda, kol vėl neįjungsi (ikonos paleidimas nuima žymę) — kitaip jos vyktų
+nematomos. Kol atidarytas langas (laiko užraktą) — galima, eiga matosi jame. bin/common.sh app_quit — tas pats bash'ui.
 Testams: DIKTATURA_SYSTEMCTL — netikra systemctl komanda; DIKTATURA_SYSTEMD_DIR — kur „įdiegti" unit'ai.
 """
 import os
@@ -265,6 +268,78 @@ def power_on() -> tuple:
         return False, f"įjungti nepavyko: {(r.stderr or r.stdout).strip()} (make install-units?)"
     power_file().unlink(missing_ok=True)
     return True, f"⏻ Diktatūra įjungta: {', '.join(POWER_LABELS[u] for u in units)}"
+
+
+# ── ikonos „Išeiti": Diktatūra išjungta -> transkripcijos sustabdomos ir naujos neprasideda, kol vėl neįjungta ──
+
+def quit_state():
+    """{"at": ...} — Diktatūra išjungta ikonos „Išeiti" (žymė <state>/quit.json); None — įjungta."""
+    import json
+    try:
+        d = json.loads(paths.QUIT_FILE.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    except ValueError:
+        return {}                                 # sugadinta žymė — vis tiek žymė
+    return d if isinstance(d, dict) else {}
+
+
+def clear_quit() -> None:
+    """Diktatūra vėl įjungta (paleista ikona) — transkripcijos vėl gali prasidėti."""
+    paths.QUIT_FILE.unlink(missing_ok=True)
+
+
+def hold_window_lock():
+    """Langas laiko užraktą visą savo gyvenimą (failo objektą reikia laikyti): kol jis yra — window_open()."""
+    import fcntl
+    paths.WINDOW_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(paths.WINDOW_LOCK, "a+")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        pass                                      # jau laiko kitas langas — vis tiek atidarytas
+    return fh
+
+
+def window_open() -> bool:
+    """Ar atidarytas pagrindinis langas (laiko WINDOW_LOCK užraktą; nulūžus — užraktas dingsta pats)."""
+    import fcntl
+    if not paths.WINDOW_LOCK.exists():
+        return False
+    try:
+        with open(paths.WINDOW_LOCK, "a+") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.flock(fh, fcntl.LOCK_UN)
+            return False
+    except OSError:
+        return False
+
+
+def transcription_blocked() -> bool:
+    """Išjungta „Išeiti" ir langas neatidarytas -> transkripcija būtų nematoma (= bin/common.sh app_quit)."""
+    return quit_state() is not None and not window_open()
+
+
+def quit_app() -> list:
+    """Ikonos „Išeiti": pažymėti išjungtą (naujos transkripcijos neprasideda), uždaryti langą, sustabdyti vykstančias
+    (garsas lieka — tekstą padarys, kai vėl įjungsi). Įrašymo režimo nekeičia. -> pranešimo eilutės."""
+    import json
+    from datetime import datetime
+
+    from diktatura import progress
+    paths.QUIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    paths.QUIT_FILE.write_text(json.dumps({"at": datetime.now().isoformat(timespec="seconds")}), encoding="utf-8")
+    lines = []
+    if close_window():                            # pirma langas — kitaip jo užraktas leistų naujas transkripcijas
+        lines.append("langas uždarytas")
+    snap = progress.snapshot()
+    if snap.active:
+        lines.append(progress.stop_all(snap))
+    systemctl("stop", *JOB_UNITS)                 # laukiantys užrakto (activating) — nebepradės
+    return lines
 
 
 def main(argv=None) -> int:

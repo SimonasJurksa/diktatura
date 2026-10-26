@@ -46,7 +46,9 @@ Ekrano kampe, kol įrašoma: gyva abiejų kanalų banga ir laikmatis („ar mane
 
 ## 🎓 Apmokymai
 
-Nežinomas balsas („Kolega?nez1") — paklausai, matai ką sakė, įrašai vardą; nuo tada atpažįstamas automatiškai:
+Nežinomas balsas („Kolega?nez1") — paklausai (pavyzdį arba „🔊 Įraše" — vietą su ±3 s), matai ką sakė, įrašai vardą;
+nuo tada atpažįstamas automatiškai. „🔄 Pertikrinti pagal išmoktus" — likę palyginami su žinomais: 💡 pasiūlymas
+sąrašo viršuje, vardas jau laukelyje (Enter). Klaviatūra: Ctrl+Tarpas groja, rašai vardą, Enter — įrašo ir groja kitą:
 
 ![Apmokymai](img/training.png)
 

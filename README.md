@@ -25,9 +25,13 @@ bangą — groja nuo ten (ratukas — artinti):
 
 ![Diktatūros teksto langas](docs/img/text.png)
 
-**🎓 Apmokymai** — kai kalba nepažįstamas balsas, jis tekste pažymimas „Kolega?nezN". Čia jo paklausai, matai, ką
-sakė, ir įrašai vardą — nuo tada atpažįstamas automatiškai, o seni tekstai pasitaiso patys (kol groja perklausa,
-Diktatūra jos neįrašinėja):
+**🎓 Apmokymai** — kai kalba nepažįstamas balsas, jis tekste pažymimas „Kolega?nezN". Čia jo paklausai (trumpą
+pavyzdį arba „🔊 Įraše" — tą vietą su keliomis sekundėmis prieš ir po), matai, ką sakė, ir įrašai vardą — nuo tada
+atpažįstamas automatiškai, o seni tekstai pasitaiso patys (kol groja perklausa, Diktatūra jos neįrašinėja).
+Įvardinus kelis, „🔄 Pertikrinti pagal išmoktus" palygina likusius su jau žinomais: panašūs gauna 💡 pasiūlymą
+(sąrašo viršuje, vardas jau įrašytas — paklausyk ir Enter). Greičiausia — klaviatūra: **Ctrl+Tarpas** groja (dar kartą —
+stabdo; **Ctrl+Shift+Tarpas** — vieta įraše), žymeklis lieka vardo laukelyje; rašai vardą (↓ — esamas iš sąrašo),
+**Enter** įrašo ir iškart groja kitą, tuščias Enter — praleidžia:
 
 ![Apmokymai](docs/img/training.png)
 
@@ -140,17 +144,23 @@ Kodas lieka ten, kur klonavai; **duomenys — už repo ribų**:
 nustatymai `~/.config/diktatura/`, įrašai/tekstai/balsai/modeliai `~/.local/share/diktatura/`, logai `~/.local/state/diktatura/`.
 Pašalinti servisus: `make uninstall` (duomenys lieka).
 
+**Ikonos meniu „Išeiti"** išjungia Diktatūrą: uždaromas ir langas, vykstanti transkripcija sustabdoma (jei ji vyksta, prieš
+tai paklausiama — matosi, kuri ir kiek liko), o naujos (naktinė, sekamų aplankų, po įrašo) neprasideda, kol vėl
+neįjungsi Diktatūros (programų meniu / dokas arba `make tray-on`) — kitaip jos vyktų nematomos. Sustabdytas failas lieka
+be teksto ir bus transkribuotas, kai vėl įjungsi. Kol atidarytas langas, transkribuoti galima (eiga matosi jame).
+Įrašymo režimo „Išeiti" nekeičia (VOX / Slack — Nustatymuose arba `make off`).
+
 ## Naudojimas
 
 ```bash
-make status               # kas vyksta: režimas, įrašai, RAM
+make status               # kas vyksta: režimas, transkripcija (ir sekamų aplankų), įrašai, RAM
 make off                  # ⏻ trūksta resursų? išjungti VISKĄ: įrašymą, transkripcijas, naktinį, ikoną, langą
 make on                   # ⏻ įjungti atgal tai, kas buvo įjungta (tas pats režimas, naktinis, ikona)
 make doctor               # savitikra: ar viskas sudiegta ir veikia (✓/⚠/✗ + ką daryti)
 make mode-slack           # 💬 Slack skambučių aptikimas
 make mode-vox             # 🎙️ balso aktyvumas (diktavimui, be Slack)
 make immediate | defer    # transkribuoti iškart / naktį (01:30)
-make transcribe-pending   # sutranskribuoti viską dabar
+make transcribe-pending   # sutranskribuoti viską dabar (net jei Diktatūra išjungta ikonos „Išeiti")
 make progress             # ⏳ kas transkribuojama, kiek liko (failui ir visai eilei)
 make cleanup DRY=1        # 🧹 ką ištrintų seno garso trynimas (be DRY — ištrinti; tekstai lieka)
 make backup-voices        # 💾 balsų atsarginė kopija (make backups — sąrašas; make restore-voices — atkurti)
@@ -158,7 +168,7 @@ make restart-all          # po git pull: perkrauti visus veikiančius servisus (
 make sources              # 📱 sekami aplankai: kiek failų, tekstų, kiek laukia (pridėti — Nustatymuose)
 make mcp                  # 🔌 kaip prijungti tekstus prie AI kliento (tik skaitymas; pats neregistruoja)
 make text                 # langas: 📄 Tekstas   (make training — 🎓 Apmokymai, make settings — ⚙ Nustatymai)
-make tray-on              # grąžinti ikoną (jei meniu paspaudei „Išeiti" — įrašymas tuo metu veikia toliau)
+make tray-on              # įjungti ikoną atgal (po „Išeiti" — tada vėl vyksta ir transkripcijos)
 make desktop              # „Diktatūra" programų meniu (prisegama prie doko: grąžina ikoną ir atidaro langą)
 make config               # nustatymai;  make set S="VOX_SILENCE_SEC=3"  (veikia be restarto)
 make asr-server-on        # ⚡ nuolat įkrautas modelis — greitesnis tekstas po diktavimo (~3 GB RAM; off — išjungti)
@@ -169,15 +179,20 @@ make help                 # visos komandos
 ### Kalbėtojų vardai
 
 Patogiausia — **🎓 Apmokymai** lange (ikonos meniu „Apmokymai paruošti (N)" arba `make training`): paklausyk,
-pažiūrėk, ką sakė, įrašyk vardą (jei tai tu pats — „🙋 Tai aš"). Ten pat galima pervadinti ar sujungti registruotus
+pažiūrėk, ką sakė, įrašyk vardą (jei tai tu pats — „🙋 Tai aš"). Ilgame įraše (pvz. susirinkime — šimtai trumpų
+fragmentų) įvardink dažniausius, tada **🔄 Pertikrinti pagal išmoktus**: likę fragmentai palyginami su žinomais balsais,
+panašūs gauna 💡 pasiūlymą — paklausyk („🔊 Įraše" groja vietą su ±3 s) ir spausk Enter. Pertikrinama ir savaime, po
+kiekvieno vardo. Pasiūlymai nėra tikri: trumpų fragmentų balsas nepatikimas, todėl vardai patys nekeičiami (išskyrus
+„✔ Priimti užtikrintus" — tuos, kuriuos ir transkripcija atpažintų). Ten pat galima pervadinti ar sujungti registruotus
 balsus. Jei vardas parašytas klaidingai — **📄 Tekstas**, dešinys klik ant eilutės → „✎ Kas kalbėjo?": eilutė
 pataisoma ir balsas išmokstamas. Griežtumas — **⚙ Nustatymai → Kalbėtojai** (slenkstis ir atsarga iki antro
-kandidato). Komandinėje eilutėje:
+kandidato, pasiūlymų slenkstis). Komandinėje eilutėje:
 
 ```bash
 make name-unknown                 # nežinomi balsai (pavyzdžiai) + komanda paklausyti
 make assign ID=nez3 NAME=Jonas    # priskirti vardą (įsimenamas ateičiai; tekstuose pakeičiamas; NAME=Tu — tavo balsas)
 make speakers-relabel DAYS=2      # perskaičiuoti kalbėtojus paskutinių dienų tekstuose (APPLY=1 — perrašyti)
+PYTHONPATH=. .venv/bin/python -m diktatura.speakers.suggest   # 💡 pasiūlymai (tas pats, kas „🔄 Pertikrinti")
 ```
 Atnaujinus iš senesnės versijos (iki 2026-10-09) balso modelis pasikeitė: `make models` ir
 `make speakers-migrate APPLY=1` (seni balsai archyvuojami, vardai išmokstami iš naujo — `make doctor` primins).
